@@ -68,8 +68,9 @@ except Exception:
 DEFAULT_UI = UI_SCALE * _SMALL
 UI_MIN, UI_MAX = 0.55, 1.8
 
-WIDTH = 440          # 以下都是 ui=1 时的逻辑像素，
-PAD = 20             # 画完之后整块按 self.scale 放大（见 _paint 末尾）
+W_DEFAULT = 440      # 卡片默认逻辑宽度；拖左右边会改 self.W
+W_MIN, W_MAX = 300, 900
+PAD = 20             # 布局全用逻辑像素，画完整块按 self.scale 放大
 EDGE = 7             # 边缘判定带宽度：拖这一圈是缩放，拖里面是移动
 CORNER = 18          # 四角判定方块的边长
 MIN_H = 110          # 拖到最矮也不能低于这个（逻辑像素）
@@ -131,7 +132,8 @@ class Widget:
     def __init__(self, root, today=None, now=None):
         self.root = root
         self.fixed_today, self.fixed_now = today, now
-        self.ui = DEFAULT_UI
+        self.ui = DEFAULT_UI    # 字号缩放，只由滚轮改
+        self.W = W_DEFAULT      # 卡片逻辑宽度，只由拖左右边/角改
         self.win_h = None       # 用户拖出来的高度（物理像素）；None = 跟着内容走
         self.collapsed = False
         self._mode = None       # None / move / resize / button
@@ -193,6 +195,7 @@ class Widget:
             self.fonts[k].configure(size=max(6, round(base * self.ui)))
 
     def set_ui(self, v, save=True):
+        """只改字号（连带间距）。卡片宽度是 self.W，跟这个无关。"""
         v = max(UI_MIN, min(UI_MAX, v))
         if abs(v - self.ui) < 0.004:
             return False
@@ -207,13 +210,25 @@ class Widget:
 
     def reset_size(self):
         self.win_h = None
+        self.W = W_DEFAULT
         self.collapsed = False
         if not self.set_ui(DEFAULT_UI):
             self.render()
             self.save_state()
 
     def on_wheel(self, e):
-        self.set_ui(self.ui * (WHEEL_STEP if e.delta > 0 else 1 / WHEEL_STEP))
+        """以鼠标为锚点缩放 —— 鼠标底下那个点保持不动，而不是钉住左上角"""
+        x0, y0 = self.root.winfo_x(), self.root.winfo_y()
+        w0, h0 = max(1, self.root.winfo_width()), max(1, self.root.winfo_height())
+        fx = (e.x_root - x0) / w0        # 鼠标在卡片里的相对位置
+        fy = (e.y_root - y0) / h0
+        if self.set_ui(self.ui * (WHEEL_STEP if e.delta > 0 else 1 / WHEEL_STEP),
+                       save=False):
+            self.root.update_idletasks()
+            w1, h1 = self.root.winfo_width(), self.root.winfo_height()
+            self.root.geometry(f"+{round(e.x_root - fx * w1)}"
+                               f"+{round(e.y_root - fy * h1)}")
+            self.save_state()
         return "break"
 
     # ---- 折叠 ----
@@ -230,6 +245,7 @@ class Widget:
             with open(POS_FILE, encoding="utf-8") as fh:
                 p = json.load(fh)
             self.ui = max(UI_MIN, min(UI_MAX, float(p.get("ui", DEFAULT_UI))))
+            self.W = max(W_MIN, min(W_MAX, float(p.get("w", W_DEFAULT))))
             self.collapsed = bool(p.get("collapsed", False))
             h = p.get("h")
             self.win_h = int(h) if h else None
@@ -243,7 +259,7 @@ class Widget:
 
     def reset_pos(self):
         sw = self.root.winfo_screenwidth()
-        x, y = sw - int(WIDTH * self.scale) - 36, 48
+        x, y = sw - int(self.W * self.scale) - 36, 48
         self.root.geometry(f"+{x}+{y}")
         self._write(x, y)   # 直接存算出来的值 —— 这时窗口还没布局，
                             # winfo_x() 只会返回 0，存进去下次就跑左上角了
@@ -252,7 +268,8 @@ class Widget:
         try:
             with open(POS_FILE, "w", encoding="utf-8") as fh:
                 json.dump({"x": x, "y": y, "ui": round(self.ui, 3),
-                           "h": self.win_h, "collapsed": self.collapsed}, fh)
+                           "w": round(self.W, 1), "h": self.win_h,
+                           "collapsed": self.collapsed}, fh)
         except Exception:
             pass
 
@@ -325,7 +342,7 @@ class Widget:
             self._mode = "resize"
             self._rz = (z, e.x_root, e.y_root,
                         self.root.winfo_x(), self.root.winfo_y(),
-                        self.root.winfo_width(), self.root.winfo_height(), self.ui)
+                        self.root.winfo_width(), self.root.winfo_height(), self.W)
         else:
             self._mode = "move"
             self._drag = (lx, ly)
@@ -340,26 +357,25 @@ class Widget:
         return "break"
 
     def _do_resize(self, e):
-        """拖边 = 朝那条边缩放；拖角 = 钉住对角自由形变。
-        宽度决定缩放比例，高度决定能显示多少条。"""
-        z, mx0, my0, x0, y0, w0, h0, ui0 = self._rz
+        """拖边 = 只朝那个方向拉；拖角 = 钉住对角，宽高各自变。
+        全程不动字号 —— 字号是滚轮的事。"""
+        z, mx0, my0, x0, y0, w0, h0, W0 = self._rz
         dx, dy = e.x_root - mx0, e.y_root - my0
-        base = WIDTH * DPI_SCALE          # ui=1 时的物理宽度
 
         w = w0
         if "e" in z:
             w = w0 + dx
         elif "w" in z:
             w = w0 - dx
-        ui = max(UI_MIN, min(UI_MAX, w / base))
-        w = int(ui * base)                # 夹紧后回推真实宽度，免得越界时位置漂移
+        newW = max(W_MIN, min(W_MAX, w / self.scale))   # 卡片宽度按逻辑像素存
+        w = int(newW * self.scale)                      # 夹紧后回推，免得越界时漂移
 
         h = h0
         if "s" in z:
             h = h0 + dy
         elif "n" in z:
             h = h0 - dy
-        h = max(int(MIN_H * DPI_SCALE * ui),
+        h = max(int(MIN_H * self.scale),
                 min(self.root.winfo_screenheight(), int(h)))
 
         # 钉住对边/对角：动左边就右边不动，动上边就下边不动
@@ -367,16 +383,9 @@ class Widget:
         y = y0 + (h0 - h) if "n" in z else y0
 
         self.collapsed = False
-        if "n" in z or "s" in z:        # 角和上下边：高度就是拖出来的
-            new_h = h
-        elif self.win_h:                # 纯左右拖：锁定的高度按缩放比例跟随
-            new_h = int(self.win_h * ui / self.ui)
-        else:
-            new_h = None
-        if abs(ui - self.ui) >= 0.004:
-            self.ui = ui
-            self.apply_fonts()
-        self.win_h = new_h
+        self.W = newW
+        if "n" in z or "s" in z:      # 只有真的拖了上下方向才锁高度
+            self.win_h = h
         self.render()
         self.root.geometry(f"+{x}+{y}")
 
@@ -412,7 +421,7 @@ class Widget:
         return self.canvas.create_text(x, y, text=s, font=font, fill=fill, anchor=anchor)
 
     def rule(self, y):
-        self.canvas.create_line(PAD, y, WIDTH - PAD, y, fill=LINE)
+        self.canvas.create_line(PAD, y, self.W - PAD, y, fill=LINE)
 
     def _draw_buttons(self, w):
         """右上角三个按钮，用画的不用字符 —— 不依赖字体里有没有那些符号。
@@ -503,7 +512,7 @@ class Widget:
         text, col = self._headline(today, nm)
         btn_zone = BTN * 3 + BTN_GAP * 2 + 16
         self.txt(PAD + 76, y + 2, text, self.fonts["body"], col,
-                 maxw=(WIDTH - PAD - btn_zone - (PAD + 76)) * self.scale)
+                 maxw=(self.W - PAD - btn_zone - (PAD + 76)) * self.scale)
         y += 38
         if self.scale != 1.0:
             c.scale("all", 0, 0, self.scale, self.scale)
@@ -542,17 +551,17 @@ class Widget:
         if cur:
             (h1, m1), (h2, m2), title, room, kind = cur
             col = kind_color(kind)
-            c.create_rectangle(PAD - 8, y - 6, WIDTH - PAD + 8, y + 68,
+            c.create_rectangle(PAD - 8, y - 6, self.W - PAD + 8, y + 68,
                                fill=NOW_BG, outline="")
             self.txt(PAD, y, "正在上", F["head"], DIM)
-            self.txt(WIDTH - PAD, y, room, F["head"], DIM, "ne")
+            self.txt(self.W - PAD, y, room, F["head"], DIM, "ne")
             self.txt(PAD, y + 18, title, F["big"], col)
             left = mins(cur[1]) - nm
-            self.txt(WIDTH - PAD, y + 22, f"还剩 {left} 分", F["small"], DIM, "ne")
+            self.txt(self.W - PAD, y + 22, f"还剩 {left} 分", F["small"], DIM, "ne")
             # 进度条
             total = mins(cur[1]) - mins(cur[0])
             frac = 0 if total <= 0 else (nm - mins(cur[0])) / total
-            bx0, bx1, by = PAD, WIDTH - PAD, y + 56
+            bx0, bx1, by = PAD, self.W - PAD, y + 56
             c.create_line(bx0, by, bx1, by, fill=LINE, width=3)
             c.create_line(bx0, by, bx0 + (bx1 - bx0) * frac, by, fill=col, width=3)
             y += 84
@@ -561,7 +570,7 @@ class Widget:
             self.txt(PAD, y, "下一节", F["head"], DIM)
             self.txt(PAD, y + 18, f"{h1:02d}:{m1:02d}", F["big"], kind_color(kind))
             self.txt(PAD + 78, y + 20, title, F["body"], FG)
-            self.txt(WIDTH - PAD, y + 20, room, F["small"], DIM, "ne")
+            self.txt(self.W - PAD, y + 20, room, F["small"], DIM, "ne")
             self.txt(PAD, y + 44, human_gap(mins(nxt[0]) - nm), F["small"], DIM)
             y += 68
         else:
@@ -585,8 +594,8 @@ class Widget:
                                    fill=kind_color(kind), outline="")
                 self.txt(PAD + 12, y, f"{h1:02d}:{m1:02d}", F["small"], kind_color(kind))
                 self.txt(PAD + 76, y, title, F["body"], FG,
-                         maxw=(WIDTH - PAD - 60 - (PAD + 76)) * self.scale)
-                self.txt(WIDTH - PAD, y + 1, room, F["small"], FAINT, "ne")
+                         maxw=(self.W - PAD - 60 - (PAD + 76)) * self.scale)
+                self.txt(self.W - PAD, y + 1, room, F["small"], FAINT, "ne")
                 y += 26
             y += 6
 
@@ -614,7 +623,7 @@ class Widget:
                               fill=PURPLE if is_exam else col, outline="")
                 w = self.txt(PAD + 18, y, it.label, F["body"],
                              PURPLE if is_exam else FG,
-                             maxw=(WIDTH - PAD - 88 - (PAD + 18)) * self.scale)
+                             maxw=(self.W - PAD - 88 - (PAD + 18)) * self.scale)
                 # bbox 的左边是逻辑坐标，宽度却是字体渲染出来的物理像素 ——
                 # 混着用会让工时标签在缩放后跑偏（放大时空一大截，缩小时压到字上）
                 x1, _, x2, _ = self.canvas.bbox(w)
@@ -623,7 +632,7 @@ class Widget:
                          "复习" if it.hours is None else f"{it.hours:g}h",
                          F["small"], FAINT)
                 tail = ("今天 %02d:%02d" % it.at) if n == 0 else when_cn(n)
-                self.txt(WIDTH - PAD, y + 1, tail, F["small"], col, "ne")
+                self.txt(self.W - PAD, y + 1, tail, F["small"], col, "ne")
                 y += 26
             if len(todo) > todo_max:
                 self.txt(PAD + 18, y, f"⋯ 还有 {len(todo) - todo_max} 件", F["small"], FAINT)
@@ -649,12 +658,12 @@ class Widget:
                                        fill=PURPLE, outline="")
                 elif it.hard:
                     c.create_oval(PAD + 72, y + 7, PAD + 79, y + 14, fill=col, outline="")
-                self.txt(WIDTH - PAD, y + 1, "%02d:%02d" % it.at,
+                self.txt(self.W - PAD, y + 1, "%02d:%02d" % it.at,
                          F["small"], FAINT, "ne")
                 self.txt(PAD + 92, y, it.text,
                          F["body"] if it.hard else F["small"],
                          PURPLE if it.kind == "exam" else (FG if it.hard else DIM),
-                         maxw=(WIDTH - PAD - 52 - (PAD + 92)) * self.scale)
+                         maxw=(self.W - PAD - 52 - (PAD + 92)) * self.scale)
                 y += 25
             if len(rest) > rest_max:
                 self.txt(PAD + 92, y, f"⋯ 还有 {len(rest) - rest_max} 项", F["small"], FAINT)
@@ -671,11 +680,11 @@ class Widget:
             self.rule(y)
             y += 14
             self.txt(PAD, y, "下一场考试", F["head"], DIM)
-            self.txt(WIDTH - PAD, y, f"{ed.month}/{ed.day} {h1:02d}:{m1:02d}",
+            self.txt(self.W - PAD, y, f"{ed.month}/{ed.day} {h1:02d}:{m1:02d}",
                      F["head"], FAINT, "ne")
             self.txt(PAD, y + 20, f"{course} {name}", F["body"], FG)
             cd = "就是今天" if n == 0 else "明天" if n == 1 else f"{n} 天"
-            self.txt(WIDTH - PAD, y + 21, cd, F["small"], URG[urgency(n)], "ne")
+            self.txt(self.W - PAD, y + 21, cd, F["small"], URG[urgency(n)], "ne")
             y += 50
 
         y += 12
@@ -685,7 +694,7 @@ class Widget:
         return int(y * self.scale)
 
     def render(self):
-        w = int(WIDTH * self.scale)
+        w = int(self.W * self.scale)
         if self.collapsed:
             h = self._paint_collapsed()
         else:
