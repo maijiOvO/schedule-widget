@@ -12,16 +12,18 @@
     python  _schedule/widget.py --unstartup  # 取消开机自启
     python  _schedule/widget.py --shot out.png   # 截一张当前样子，用来调样式
 
-鼠标操作：
-    拖动           移动位置（自动记住）
-    拖右下角       等比缩放整个组件（自动记住）
-    双击顶部时间栏 折叠成一行 / 展开
-    双击其他地方   打开 学期日程.md
-    悬停           从半透明变清晰
-    右键           菜单
+鼠标：
+    右上角三个按钮   折叠/展开 · 恢复默认大小 · 立即刷新
+    滚轮            放大 / 缩小
+    拖边缘          朝那条边缩放
+    拖角            固定对角自由形变
+    拖别处          移动位置
+    双击            打开 学期日程.md
+    右键            其余低频操作
 """
 import ctypes
 import datetime as dt
+import math
 import json
 import os
 import sys
@@ -56,7 +58,7 @@ def dpi_scale():
     return dpi / 96.0, dpi
 
 
-UI_SCALE = 1.0   # 默认大小。平时不用改这里 —— 拖组件右下角就能实时缩放，会记住
+UI_SCALE = 1.0   # 默认大小。平时不用改这里 —— 滚轮或者拖边缘就能实时调，会记住
 
 DPI_SCALE, DPI = dpi_scale()
 try:    # 屏幕不高的机器（多是笔记本）默认小一档，否则组件占掉大半个屏
@@ -68,12 +70,16 @@ UI_MIN, UI_MAX = 0.55, 1.8
 
 WIDTH = 440          # 以下都是 ui=1 时的逻辑像素，
 PAD = 20             # 画完之后整块按 self.scale 放大（见 _paint 末尾）
-GRIP = 18            # 右下角缩放手柄的边长
-TITLE_H = 58         # 顶部时间栏的高度 —— 双击这一块折叠
+EDGE = 7             # 边缘判定带宽度：拖这一圈是缩放，拖里面是移动
+CORNER = 18          # 四角判定方块的边长
+MIN_H = 110          # 拖到最矮也不能低于这个（逻辑像素）
+BTN, BTN_GAP = 15, 11    # 右上角按钮的边长和间距
+TITLE_H = 58         # 顶部时间栏高度
 REFRESH_MS = 15_000
 TODO_MAX = 4      # 「该动手了」最多列几条
 REST_MAX = 6      # 「接下来」最多列几条
 ALPHA_IDLE, ALPHA_HOVER = 0.92, 1.0
+WHEEL_STEP = 1.07    # 滚一格缩放多少
 
 # 字号基准（ui=1 时的磅值），缩放时按 ui 等比调整
 FONT_BASE = {"time": 19, "date": 10, "head": 8, "big": 12, "body": 10, "small": 9}
@@ -83,6 +89,9 @@ FG      = "#e6edf3"
 DIM     = "#7d8590"
 FAINT   = "#4a525c"
 LINE    = "#262c34"
+BTN_FG  = "#8b949e"
+BTN_HI  = "#e6edf3"
+BTN_BG  = "#242c37"
 BLUE    = "#79c0ff"
 GREEN   = "#56d364"
 PURPLE  = "#c6a0f6"
@@ -90,6 +99,12 @@ URG     = ["#ff7b72", "#ffa657", "#d2b464", "#7d8590"]   # data.urgency() 四级
 NOW_BG  = "#1b2430"
 
 WEEK_CN = "一二三四五六日"
+
+# 八个方向对应的鼠标指针（用 X11 标准名，Tk 在 Windows 上有映射）
+CURSORS = {"nw": "top_left_corner", "ne": "top_right_corner",
+           "sw": "bottom_left_corner", "se": "bottom_right_corner",
+           "n": "top_side", "s": "bottom_side",
+           "w": "left_side", "e": "right_side"}
 
 
 def mins(t):
@@ -117,10 +132,13 @@ class Widget:
         self.root = root
         self.fixed_today, self.fixed_now = today, now
         self.ui = DEFAULT_UI
+        self.win_h = None       # 用户拖出来的高度（物理像素）；None = 跟着内容走
         self.collapsed = False
-        self._mode = None
+        self._mode = None       # None / move / resize / button
         self._drag = None
-        self._resize0 = None
+        self._rz = None         # resize 起始快照
+        self._btns = []         # [(x1, y1, x2, y2, 回调, 名字)]，物理坐标
+        self._hot = None        # 鼠标正悬在哪个按钮上
 
         root.overrideredirect(True)
         root.attributes("-topmost", True)
@@ -142,24 +160,19 @@ class Widget:
             w.bind("<ButtonRelease-1>", self.on_release)
             w.bind("<Double-Button-1>", self.on_double)
             w.bind("<Button-3>", self.on_menu)
-            w.bind("<Enter>", lambda e: root.attributes("-alpha", ALPHA_HOVER))
-            w.bind("<Leave>", lambda e: root.attributes("-alpha", ALPHA_IDLE))
+            w.bind("<Motion>", self.on_motion)
+            w.bind("<MouseWheel>", self.on_wheel)
+            w.bind("<Enter>", lambda e: (root.attributes("-alpha", ALPHA_HOVER), "break")[1])
+            w.bind("<Leave>", self.on_leave)
 
         self.menu = tk.Menu(root, tearoff=0, bg="#1c2128", fg=FG,
                             activebackground="#30363d", activeforeground=FG,
                             bd=0, font=("Microsoft YaHei", 9))
-        self.menu.add_command(label="折叠 / 展开", command=self.toggle_collapse)
-        self.menu.add_separator()
-        self.menu.add_command(label="大一点", command=lambda: self.bump(+0.1))
-        self.menu.add_command(label="小一点", command=lambda: self.bump(-0.1))
-        self.menu.add_command(label="恢复默认大小", command=self.reset_size)
-        self.menu.add_separator()
         self.menu.add_command(label="打开学期日程.md", command=self.open_md)
-        self.menu.add_command(label="立即刷新", command=self.render)
+        self.menu.add_command(label="回到右上角", command=self.reset_pos)
         self.topmost = tk.BooleanVar(value=True)
         self.menu.add_checkbutton(label="总在最前", variable=self.topmost,
                                   command=lambda: root.attributes("-topmost", self.topmost.get()))
-        self.menu.add_command(label="回到右上角", command=self.reset_pos)
         self.menu.add_separator()
         self.menu.add_command(label="退出", command=root.destroy)
 
@@ -181,19 +194,27 @@ class Widget:
 
     def set_ui(self, v, save=True):
         v = max(UI_MIN, min(UI_MAX, v))
-        if abs(v - self.ui) < 0.005:
-            return
+        if abs(v - self.ui) < 0.004:
+            return False
+        if self.win_h:              # 手动定过高度的话，让它跟着一起缩放
+            self.win_h = int(self.win_h * v / self.ui)
         self.ui = v
         self.apply_fonts()
         self.render()
         if save:
             self.save_state()
-
-    def bump(self, d):
-        self.set_ui(self.ui + d)
+        return True
 
     def reset_size(self):
-        self.set_ui(DEFAULT_UI)
+        self.win_h = None
+        self.collapsed = False
+        if not self.set_ui(DEFAULT_UI):
+            self.render()
+            self.save_state()
+
+    def on_wheel(self, e):
+        self.set_ui(self.ui * (WHEEL_STEP if e.delta > 0 else 1 / WHEEL_STEP))
+        return "break"
 
     # ---- 折叠 ----
     def toggle_collapse(self):
@@ -210,6 +231,8 @@ class Widget:
                 p = json.load(fh)
             self.ui = max(UI_MIN, min(UI_MAX, float(p.get("ui", DEFAULT_UI))))
             self.collapsed = bool(p.get("collapsed", False))
+            h = p.get("h")
+            self.win_h = int(h) if h else None
             sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
             x, y = int(p["x"]), int(p["y"])
             if not (-40 <= x <= sw - 120 and -10 <= y <= sh - 120):
@@ -229,52 +252,147 @@ class Widget:
         try:
             with open(POS_FILE, "w", encoding="utf-8") as fh:
                 json.dump({"x": x, "y": y, "ui": round(self.ui, 3),
-                           "collapsed": self.collapsed}, fh)
+                           "h": self.win_h, "collapsed": self.collapsed}, fh)
         except Exception:
             pass
 
     def save_state(self):
         self._write(self.root.winfo_x(), self.root.winfo_y())
 
+    # ---- 命中判定 ----
+    def _local(self, e):
+        return e.x_root - self.root.winfo_x(), e.y_root - self.root.winfo_y()
+
+    def _zone(self, lx, ly):
+        """鼠标在哪条边/哪个角上？不在边缘就返回 None（那是移动区）"""
+        w, h = self.root.winfo_width(), self.root.winfo_height()
+        edge = max(4, int(EDGE * self.scale))
+        corner = max(10, int(CORNER * self.scale))
+        left, right = lx < edge, lx > w - edge
+        top, bottom = ly < edge, ly > h - edge
+        # 角的判定范围比边宽一些，不然很难点中
+        cl, cr = lx < corner, lx > w - corner
+        ct, cb = ly < corner, ly > h - corner
+        if (top or bottom or left or right):
+            if (ct or top) and (cl or left) and (top or left):
+                return "nw"
+            if (ct or top) and (cr or right) and (top or right):
+                return "ne"
+            if (cb or bottom) and (cl or left) and (bottom or left):
+                return "sw"
+            if (cb or bottom) and (cr or right) and (bottom or right):
+                return "se"
+            return "n" if top else "s" if bottom else "w" if left else "e"
+        return None
+
+    def _button_at(self, lx, ly):
+        for x1, y1, x2, y2, fn, name in self._btns:
+            if x1 <= lx <= x2 and y1 <= ly <= y2:
+                return fn, name
+        return None, None
+
     # ---- 鼠标 ----
-    def _in_grip(self, e):
-        """按在右下角那个缩放手柄上了吗"""
-        g = int(GRIP * self.scale)
-        lx = e.x_root - self.root.winfo_x()
-        ly = e.y_root - self.root.winfo_y()
-        return lx > self.root.winfo_width() - g and ly > self.root.winfo_height() - g
+    def on_motion(self, e):
+        # 注意：这些 handler 都要 return "break"。事件绑在 root 和 canvas 两处，
+        # 不截断的话 canvas 上的事件会冒泡到 root 再触发一次 —— 按钮会被点两下。
+        if self._mode:
+            return "break"
+        lx, ly = self._local(e)
+        _fn, name = self._button_at(lx, ly)
+        if name != self._hot:          # 按钮高亮跟着鼠标走
+            self._hot = name
+            self.render()
+        z = None if name else self._zone(lx, ly)
+        self.canvas.configure(cursor=CURSORS.get(z, "") if z else "")
+        return "break"
+
+    def on_leave(self, e):
+        self.root.attributes("-alpha", ALPHA_IDLE)
+        if self._hot:
+            self._hot = None
+            self.render()
+        return "break"
 
     def on_press(self, e):
-        if self._in_grip(e):
+        lx, ly = self._local(e)
+        fn, _name = self._button_at(lx, ly)
+        if fn:
+            self._mode = "button"
+            fn()
+            return "break"
+        z = self._zone(lx, ly)
+        if z:
             self._mode = "resize"
-            self._resize0 = (e.x_root, e.y_root, self.ui)
+            self._rz = (z, e.x_root, e.y_root,
+                        self.root.winfo_x(), self.root.winfo_y(),
+                        self.root.winfo_width(), self.root.winfo_height(), self.ui)
         else:
             self._mode = "move"
-            self._drag = (e.x_root - self.root.winfo_x(),
-                          e.y_root - self.root.winfo_y())
+            self._drag = (lx, ly)
+        return "break"
 
     def on_drag(self, e):
-        if self._mode == "resize" and self._resize0:
-            x0, y0, ui0 = self._resize0
-            # 往右下拖变大，往左上拖变小；两个方向都算，斜着拖手感自然
-            d = ((e.x_root - x0) + (e.y_root - y0)) / 2
-            self.set_ui(ui0 * (1 + d / (WIDTH * DPI_SCALE * 0.55)), save=False)
+        if self._mode == "resize" and self._rz:
+            self._do_resize(e)
         elif self._mode == "move" and self._drag:
             self.root.geometry(f"+{e.x_root - self._drag[0]}+{e.y_root - self._drag[1]}")
             self.save_state()
+        return "break"
+
+    def _do_resize(self, e):
+        """拖边 = 朝那条边缩放；拖角 = 钉住对角自由形变。
+        宽度决定缩放比例，高度决定能显示多少条。"""
+        z, mx0, my0, x0, y0, w0, h0, ui0 = self._rz
+        dx, dy = e.x_root - mx0, e.y_root - my0
+        base = WIDTH * DPI_SCALE          # ui=1 时的物理宽度
+
+        w = w0
+        if "e" in z:
+            w = w0 + dx
+        elif "w" in z:
+            w = w0 - dx
+        ui = max(UI_MIN, min(UI_MAX, w / base))
+        w = int(ui * base)                # 夹紧后回推真实宽度，免得越界时位置漂移
+
+        h = h0
+        if "s" in z:
+            h = h0 + dy
+        elif "n" in z:
+            h = h0 - dy
+        h = max(int(MIN_H * DPI_SCALE * ui),
+                min(self.root.winfo_screenheight(), int(h)))
+
+        # 钉住对边/对角：动左边就右边不动，动上边就下边不动
+        x = x0 + (w0 - w) if "w" in z else x0
+        y = y0 + (h0 - h) if "n" in z else y0
+
+        self.collapsed = False
+        if "n" in z or "s" in z:        # 角和上下边：高度就是拖出来的
+            new_h = h
+        elif self.win_h:                # 纯左右拖：锁定的高度按缩放比例跟随
+            new_h = int(self.win_h * ui / self.ui)
+        else:
+            new_h = None
+        if abs(ui - self.ui) >= 0.004:
+            self.ui = ui
+            self.apply_fonts()
+        self.win_h = new_h
+        self.render()
+        self.root.geometry(f"+{x}+{y}")
 
     def on_release(self, e):
-        if self._mode == "resize":
+        if self._mode in ("resize", "button"):
             self.save_state()
         self._mode = None
+        self._rz = None
+        return "break"
 
     def on_double(self, e):
-        """双击顶部时间栏 = 折叠/展开；双击别处 = 打开学期日程"""
-        ly = e.y_root - self.root.winfo_y()
-        if self.collapsed or ly < TITLE_H * self.scale:
-            self.toggle_collapse()
-        else:
-            self.open_md()
+        lx, ly = self._local(e)
+        if self._button_at(lx, ly)[0] or self._zone(lx, ly):
+            return "break"
+        self.open_md()
+        return "break"
 
     def on_menu(self, e):
         self.menu.tk_popup(e.x_root, e.y_root)
@@ -296,12 +414,57 @@ class Widget:
     def rule(self, y):
         self.canvas.create_line(PAD, y, WIDTH - PAD, y, fill=LINE)
 
-    def _grip(self, w, h):
-        """右下角画三道斜线，暗示这里能拖"""
-        s = max(1, round(1.5 * self.scale))
-        for off in (5, 10, 15):
-            d = int(off * self.scale)
-            self.canvas.create_line(w - d, h - 3, w - 3, h - d, fill=LINE, width=s)
+    def _draw_buttons(self, w):
+        """右上角三个按钮，用画的不用字符 —— 不依赖字体里有没有那些符号。
+        坐标全是物理像素，在整体缩放之后画。"""
+        c = self.canvas
+        self._btns = []
+        s = self.scale
+        b = int(BTN * s)
+        gap = int(BTN_GAP * s)
+        top = int(14 * s)
+        right = w - int(PAD * s)
+        lw = max(1, round(1.4 * s))
+
+        specs = [("collapse", self.toggle_collapse),
+                 ("reset", self.reset_size),
+                 ("refresh", self.render)]
+        for i, (name, fn) in enumerate(specs):
+            x2 = right - i * (b + gap)
+            x1, y1, y2 = x2 - b, top, top + b
+            hot = self._hot == name
+            if hot:
+                pad = int(4 * s)
+                c.create_rectangle(x1 - pad, y1 - pad, x2 + pad, y2 + pad,
+                                   fill=BTN_BG, outline="")
+            col = BTN_HI if hot else BTN_FG
+            cx, cy = (x1 + x2) / 2, (y1 + y2) / 2
+            if name == "collapse":
+                if self.collapsed:      # 折叠状态画个方框：点了会还原
+                    c.create_rectangle(x1 + b * .15, y1 + b * .2, x2 - b * .15, y2 - b * .2,
+                                       outline=col, width=lw)
+                else:                   # 展开状态画条横线：像最小化
+                    c.create_line(x1 + b * .12, cy + b * .22, x2 - b * .12, cy + b * .22,
+                                  fill=col, width=lw)
+            elif name == "reset":       # 方框 + 左上角实心块 = 回到标准大小和位置
+                c.create_rectangle(x1 + b * .12, y1 + b * .12, x2 - b * .12, y2 - b * .12,
+                                   outline=col, width=lw)
+                c.create_rectangle(x1 + b * .12, y1 + b * .12, cx, cy, fill=col, outline="")
+            else:                       # 转一圈的箭头 = 刷新
+                r = b * .40
+                th = 55                 # 弧的缺口留在右上，箭头就画在这个端点
+                c.create_arc(cx - r, cy - r, cx + r, cy + r,
+                             start=th, extent=285, style="arc", outline=col, width=lw)
+                rad = math.radians(th)
+                ex, ey = cx + r * math.cos(rad), cy - r * math.sin(rad)
+                tx, ty = -math.sin(rad), -math.cos(rad)      # 端点处的切线方向
+                nx, ny = -ty, tx                             # 法线，用来撑开底边
+                a = max(2, 2.6 * s)
+                c.create_polygon(ex + tx * a * 1.7, ey + ty * a * 1.7,
+                                 ex + nx * a, ey + ny * a,
+                                 ex - nx * a, ey - ny * a, fill=col, outline="")
+            pad = int(6 * s)            # 点击热区比图标本身大一圈，好点
+            self._btns.append((x1 - pad, y1 - pad, x2 + pad, y2 + pad, fn, name))
 
     def _headline(self, today, nm):
         """折叠状态下只显示一句话：眼下最要紧的那件事"""
@@ -338,9 +501,9 @@ class Widget:
         y = 13
         self.txt(PAD, y, f"{now:%H:%M}", self.fonts["big"], FG)
         text, col = self._headline(today, nm)
+        btn_zone = BTN * 3 + BTN_GAP * 2 + 16
         self.txt(PAD + 76, y + 2, text, self.fonts["body"], col,
-                 maxw=(WIDTH - PAD - 26 - (PAD + 76)) * self.scale)
-        self.txt(WIDTH - PAD + 2, y + 1, "▾", self.fonts["small"], DIM, "ne")
+                 maxw=(WIDTH - PAD - btn_zone - (PAD + 76)) * self.scale)
         y += 38
         if self.scale != 1.0:
             c.scale("all", 0, 0, self.scale, self.scale)
@@ -356,10 +519,8 @@ class Widget:
         nm = now.hour * 60 + now.minute
         y = 18
 
-        # ── 时间 / 日期 ──
+        # ── 时间 / 日期（右上角留给按钮） ──
         self.txt(PAD, y, f"{now:%H:%M}", F["time"], FG)
-        self.txt(WIDTH - PAD, y + 1, f"{today.month}月{today.day}日 周{WEEK_CN[today.weekday()]}",
-                 F["date"], DIM, "ne")
         tag = f"第 {week_no(today)} 周"
         if today in READING_WEEK:
             tag += " · Reading Week"
@@ -367,7 +528,8 @@ class Widget:
             tag += " · 停课"
         elif not (TERM_START <= today <= TERM_END):
             tag = "学期外"
-        self.txt(WIDTH - PAD, y + 30, tag, F["small"], FAINT, "ne")
+        self.txt(PAD, y + 32, f"{today.month}月{today.day}日 周{WEEK_CN[today.weekday()]}"
+                 f"  ·  {tag}", F["small"], DIM)
         y += 58
         self.rule(y)
         y += 14
@@ -523,17 +685,19 @@ class Widget:
         return int(y * self.scale)
 
     def render(self):
-        """屏幕矮就少列几条 —— 高 DPI 的笔记本上按满额画会比屏幕还高"""
+        w = int(WIDTH * self.scale)
         if self.collapsed:
             h = self._paint_collapsed()
         else:
-            limit = self.root.winfo_screenheight() - 140
+            # 有拖出来的高度就照着填，否则以屏幕高度为上限
+            target = self.win_h or (self.root.winfo_screenheight() - 140)
             for tm, rm in ((TODO_MAX, REST_MAX), (3, 4), (2, 3), (1, 2)):
                 h = self._paint(tm, rm)
-                if h <= limit:
+                if h <= target:
                     break
-        w = int(WIDTH * self.scale)
-        self._grip(w, h)
+            if self.win_h:      # 用户定了高度：内容短就留白，长就裁掉
+                h = self.win_h
+        self._draw_buttons(w)
         self.canvas.configure(width=w, height=h)
         self.root.geometry(f"{w}x{h}")
 
@@ -606,6 +770,9 @@ def main():
         out = sys.argv[sys.argv.index("--shot") + 1]
         if "--collapsed" in sys.argv:
             w.collapsed = True
+            w.render()
+        if "--hot" in sys.argv:      # 高亮某个按钮，用来看悬停效果
+            w._hot = sys.argv[sys.argv.index("--hot") + 1]
             w.render()
         root.attributes("-alpha", 1.0)   # 截图要看清样式，不要透出桌面
         root.update()
