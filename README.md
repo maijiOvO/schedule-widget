@@ -1,0 +1,121 @@
+# 2026 Fall 日程
+
+一份数据，四个出口：日历订阅、Obsidian 页面、桌面组件、壁纸。
+
+数据全部逐条核对自 `GoodNotes/2026fall/` 下各科 syllabus，对应到我自己注册的
+section（ECE311 PRA0106 · ECE314 PRA0105 · ECE334 PRA0103 · LIN200 TUT0301）。
+
+---
+
+## 换一台电脑怎么装
+
+### 1. 拿到仓库
+
+仓库的 remote 放在 Google Drive 上，不需要 GitHub 账号：
+
+```bash
+git clone "G:/我的云端硬盘/Study.git" D:/Study
+```
+
+盘符不一样就换成实际路径。前提是那台机器装了 Google Drive 并且已经同步完
+（`我的云端硬盘/Study.git` 这个文件夹要能在资源管理器里看到）。
+
+没装 Git 也行 —— 直接把 Drive 里的文件夹整个拷过去，只是以后没法 `git pull`。
+
+### 2. 装组件
+
+双击 `_schedule/安装到这台电脑.bat`。它会检查 Python、设好开机自启、然后
+立刻把组件启起来。
+
+没有 Python 的话它会告诉你去哪装（要勾 **Add python.exe to PATH**），
+或者直接用 `日程组件.exe`（见下）。
+
+### 3. 日历（可选）
+
+`任务与考试.ics` 导进手机/iPad/电脑的日历，111 条提醒。
+`课表.ics` 只导没有课表的设备 —— 手机上已经有一份了，别重复导。
+
+---
+
+## 平时怎么用
+
+组件启动后在屏幕右上角：
+
+| 操作 | 效果 |
+|---|---|
+| 拖动 | 换位置，自动记住 |
+| 鼠标悬停 | 从半透明变清晰 |
+| 双击 | 打开 `学期日程.md` |
+| 右键 | 立即刷新 / 总在最前 / 回到右上角 / 退出 |
+
+每 15 秒自己刷新。重复启动会被挡掉，不会叠出两个。
+
+---
+
+## 改日程
+
+**所有日期只存在于 `data.py` 一个地方。** 改完重跑：
+
+```bash
+python _schedule/gen.py
+```
+
+ics、`学期日程.md` 会一起更新；组件右键「立即刷新」即可，不用重启。
+
+常见的改动：
+
+- **ECE302 的 syllabus 拿到了** → 在 `WEEKLY` / `EXAMS` 里补上，它现在只有课表没有任务
+- **期末考试日期公布了** → 加进 `EXAMS`
+- **某个 lab 改期了** → 改 `ECE311_LABS` / `ECE314_LABS` / `ECE334_LABS`
+- **发现某项任务实际花的时间和估计差很远** → 改 `WORKLOAD`，三个出口一起变
+
+改完记得推回 Drive，另一台机器才拿得到：
+
+```bash
+git add -A && git commit -m "..." && git push drive master
+```
+
+另一台机器上 `git pull drive master`。
+
+---
+
+## 文件
+
+```
+data.py       所有日期 + WORKLOAD + 「某天有什么课/什么截止」的推导。谁也不依赖
+gen.py        → 课表.ics + 任务与考试.ics + ../学期日程.md
+widget.py     → 桌面组件
+wallpaper.py  → 壁纸（备选，静态的，会被窗口挡住）
+
+安装到这台电脑.bat    检查环境 + 设开机自启 + 启动
+启动组件.vbs          日常启动用，不弹黑框
+```
+
+只有 `wallpaper.py` 需要 Pillow，其余全是标准库（tkinter 是 Python 自带的）。
+需要 Python 3.9 以上。
+
+---
+
+## 关于 exe
+
+`日程组件.exe` 不需要 Python，双击就跑。但它把日程数据**编译进去了** ——
+改了 `data.py` 之后 exe 里还是旧数据，得重新打包：
+
+```bash
+python _schedule/build_exe.py
+```
+
+所以有 Python 的机器优先用 bat 装，exe 只是没 Python 时的兜底。
+
+---
+
+## 已知的坑
+
+- **ECE314 的 lab prep 比自己的 lab 早两天截止**。syllabus 规定所有人都要在该
+  lab 的第一个 section（PRA0103，周一 12:00）开始前交，而我的 lab 在周三。
+  讲义 lecture 1 上写的却是「lab 开始时交」，两者矛盾 —— 按早的算。
+- **ECE314 Lab 3 的报告按「lab 后一周」正好落进 Reading Week**（10月28日）。
+  10月21日做完 lab 当场问 TA 是否顺延。
+- **10月6日一天两场考试**：ECE334 中午 12:00，ECE311 晚上 18:30。
+- ECE334 两次 term test 的日期 syllabus 自己标了 tentative，考前留意 Quercus。
+- ECE311 习题课教室 syllabus 写 BA1200，之前记的是 BA1220，去之前核一下 ACORN。

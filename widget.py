@@ -27,7 +27,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from data import (NO_CLASS, READING_WEEK, TERM_END, TERM_START, classes_on,
                   next_exam, upcoming, urgency, week_no, when_cn)
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+FROZEN = getattr(sys, "frozen", False)   # 是否是 PyInstaller 打出来的 exe
+# 打包后 __file__ 指向临时解压目录，位置要用 exe 自己所在的目录
+HERE = os.path.dirname(sys.executable if FROZEN else os.path.abspath(__file__))
 POS_FILE = os.path.join(HERE, ".widget_pos.json")
 SCHEDULE_MD = os.path.join(HERE, "..", "学期日程.md")
 
@@ -402,11 +404,26 @@ def remove_startup():
         print("本来就没装")
 
 
+def already_running():
+    """开机自启 + 手动双击 = 两个组件叠在一起看不出来。用命名互斥量拦住第二个。
+    句柄不显式关闭，进程退出时系统自己回收。"""
+    try:
+        k32 = ctypes.windll.kernel32
+        k32.CreateMutexW(None, False, "Study2026Fall_ScheduleWidget")
+        return k32.GetLastError() == 183      # ERROR_ALREADY_EXISTS
+    except Exception:
+        return False
+
+
 def main():
     if "--startup" in sys.argv:
         return install_startup()
     if "--unstartup" in sys.argv:
         return remove_startup()
+
+    if "--shot" not in sys.argv and already_running():
+        print("组件已经在运行了")
+        return
 
     root = tk.Tk()
     today = now = None
