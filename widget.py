@@ -53,7 +53,11 @@ def dpi_scale():
 UI_SCALE = 1.0   # 嫌大就调小（0.85 之类），嫌小就调大。1.0 = 完全跟随系统缩放
 
 _sys_scale, DPI = dpi_scale()
-SCALE = _sys_scale * UI_SCALE
+try:    # 屏幕不高的机器（多是笔记本）整体再缩一档，否则组件占掉大半个屏
+    _SMALL = 0.85 if ctypes.windll.user32.GetSystemMetrics(1) < 1200 else 1.0
+except Exception:
+    _SMALL = 1.0
+SCALE = _sys_scale * UI_SCALE * _SMALL
 
 WIDTH = 440          # 以下都是 100% 缩放下的逻辑像素，
 PAD = 20             # 画完之后整块按 SCALE 放大（见 render 末尾）
@@ -203,7 +207,8 @@ class Widget:
     def rule(self, y):
         self.canvas.create_line(PAD, y, WIDTH - PAD, y, fill=LINE)
 
-    def render(self):
+    def _paint(self, todo_max, rest_max):
+        """按给定的条数上限画一遍，返回内容总高度（物理像素）"""
         c = self.canvas
         c.delete("all")
         now = self.fixed_now or dt.datetime.now()
@@ -299,7 +304,7 @@ class Widget:
             y += 14
             self.txt(PAD, y, "该动手了", self.f_head, DIM)
             y += 22
-            for it in todo[:TODO_MAX]:
+            for it in todo[:todo_max]:
                 n = it.days_left(today)
                 col = URG[urgency(n)] if it.hard or it.kind == "exam" else DIM
                 is_exam = it.kind == "exam"
@@ -316,8 +321,8 @@ class Widget:
                 tail = ("今天 %02d:%02d" % it.at) if n == 0 else when_cn(n)
                 self.txt(WIDTH - PAD, y + 1, tail, self.f_small, col, "ne")
                 y += 26
-            if len(todo) > TODO_MAX:
-                self.txt(PAD + 18, y, f"⋯ 还有 {len(todo) - TODO_MAX} 件", self.f_small, FAINT)
+            if len(todo) > todo_max:
+                self.txt(PAD + 18, y, f"⋯ 还有 {len(todo) - todo_max} 件", self.f_small, FAINT)
                 y += 24
             y += 6
 
@@ -327,7 +332,7 @@ class Widget:
             self.txt(PAD, y, "接下来", self.f_head, DIM)
             y += 22
             last = None
-            for it in rest[:REST_MAX]:
+            for it in rest[:rest_max]:
                 n = it.days_left(today)
                 col = URG[urgency(n)] if it.hard else DIM
                 if it.date != last:
@@ -347,8 +352,8 @@ class Widget:
                          PURPLE if it.kind == "exam" else (FG if it.hard else DIM),
                          maxw=(WIDTH - PAD - 52 - (PAD + 92)) * SCALE)
                 y += 25
-            if len(rest) > REST_MAX:
-                self.txt(PAD + 92, y, f"⋯ 还有 {len(rest) - REST_MAX} 项", self.f_small, FAINT)
+            if len(rest) > rest_max:
+                self.txt(PAD + 92, y, f"⋯ 还有 {len(rest) - rest_max} 项", self.f_small, FAINT)
                 y += 25
             y += 6
 
@@ -373,9 +378,18 @@ class Widget:
         # 上面全程用逻辑坐标画，这里一次性缩放到物理像素 —— 字体已由 tk scaling 处理
         if SCALE != 1.0:
             c.scale("all", 0, 0, SCALE, SCALE)
-        h = int(y * SCALE)
-        c.configure(width=int(WIDTH * SCALE), height=h)
-        self.root.geometry(f"{int(WIDTH * SCALE)}x{h}")
+        return int(y * SCALE)
+
+    def render(self):
+        """屏幕矮就少列几条 —— 高 DPI 的笔记本上按满额画会比屏幕还高"""
+        limit = self.root.winfo_screenheight() - 140
+        for tm, rm in ((TODO_MAX, REST_MAX), (3, 4), (2, 3), (1, 2)):
+            h = self._paint(tm, rm)
+            if h <= limit:
+                break
+        w = int(WIDTH * SCALE)
+        self.canvas.configure(width=w, height=h)
+        self.root.geometry(f"{w}x{h}")
 
     def tick(self):
         self.render()
