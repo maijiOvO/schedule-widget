@@ -18,6 +18,11 @@ import os
 import subprocess
 import sys
 
+try:    # Windows 控制台是 GBK，编不出来的字符别让它直接崩
+    sys.stdout.reconfigure(errors="replace")
+except Exception:
+    pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 REMOTE = "drive"
@@ -99,7 +104,7 @@ def main():
 
     if "--check" in sys.argv:
         ok, bad = check(url)
-        print("远程完整 ✓" if ok else "远程损坏 ✗")
+        print("远程仓库完整" if ok else "远程仓库损坏")
         for l in bad[:5]:
             print("  ", l)
         return 0 if ok else 1

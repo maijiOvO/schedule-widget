@@ -88,13 +88,18 @@ ics、`学期日程.md` 会一起更新；组件右键「立即刷新」即可�
 - **某个 lab 改期了** → 改 `ECE311_LABS` / `ECE314_LABS` / `ECE334_LABS`
 - **发现某项任务实际花的时间和估计差很远** → 改 `WORKLOAD`，三个出口一起变
 
-改完记得推回 Drive，另一台机器才拿得到：
+改完记得推回 Drive，另一台机器才拿得到。**用 sync.py，别直接 git push**：
 
 ```bash
-git add -A && git commit -m "..." && git push drive master
+python _schedule/sync.py -m "改了什么"
 ```
 
-另一台机器上 `git pull drive master`。
+另一台机器上 `python _schedule/sync.py --pull`。
+
+为什么不直接 `git push`：Drive 是流式盘，一次 push 要往远程写几十个小对象
+文件、异步上传，ref 更新了但对象没写全的话仓库就坏了（2026-09-09 坏过一次，
+本地毫无感觉，是下次 push 才报出来的）。`sync.py` 推完会 gc 成单个 pack 再
+fsck 验一遍，坏了自动重建重推。`--check` 只验证不推。
 
 ---
 
