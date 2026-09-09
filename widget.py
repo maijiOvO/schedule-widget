@@ -77,8 +77,10 @@ MIN_H = 110          # 拖到最矮也不能低于这个（逻辑像素）
 BTN, BTN_GAP = 15, 11    # 右上角按钮的边长和间距
 TITLE_H = 58         # 顶部时间栏高度
 REFRESH_MS = 15_000
-TODO_MAX = 4      # 「该动手了」最多列几条
-REST_MAX = 6      # 「接下来」最多列几条
+# 放得下就全列出来，放不下才一档档削。先削「接下来」—— 它比「该动手了」次要。
+# 每一档是 (该动手了最多几条, 接下来最多几条)，99 = 不限制。
+FIT_LADDER = [(99, 99), (99, 14), (99, 10), (99, 7), (6, 6), (5, 5),
+              (4, 5), (4, 4), (3, 4), (3, 3), (2, 3), (2, 2), (1, 2), (1, 1)]
 ALPHA_IDLE, ALPHA_HOVER = 0.92, 1.0
 WHEEL_STEP = 1.07    # 滚一格缩放多少
 
@@ -141,6 +143,7 @@ class Widget:
         self._rz = None         # resize 起始快照
         self._btns = []         # [(x1, y1, x2, y2, 回调, 名字)]，物理坐标
         self._hot = None        # 鼠标正悬在哪个按钮上
+        self._fit = 0           # 上次用的 FIT_LADDER 档位，下次从这里接着找
 
         root.overrideredirect(True)
         root.attributes("-topmost", True)
@@ -589,7 +592,7 @@ class Widget:
             y += 14
             self.txt(PAD, y, "今天剩下", F["head"], DIM)
             y += 22
-            for (h1, m1), _e, title, room, kind in rest[:5]:
+            for (h1, m1), _e, title, room, kind in rest:
                 c.create_rectangle(PAD, y + 4, PAD + 3, y + 17,
                                    fill=kind_color(kind), outline="")
                 self.txt(PAD + 12, y, f"{h1:02d}:{m1:02d}", F["small"], kind_color(kind))
@@ -700,10 +703,23 @@ class Widget:
         else:
             # 有拖出来的高度就照着填，否则以屏幕高度为上限
             target = self.win_h or (self.root.winfo_screenheight() - 140)
-            for tm, rm in ((TODO_MAX, REST_MAX), (3, 4), (2, 3), (1, 2)):
-                h = self._paint(tm, rm)
-                if h <= target:
-                    break
+            # 从上次那一档开始爬，别每次都从头扫 —— 拖拽时每动一下都会重画
+            i = self._fit
+            h = self._paint(*FIT_LADDER[i])
+            if h <= target:
+                while i > 0:                 # 还有余量，试试能不能列得更全
+                    h2 = self._paint(*FIT_LADDER[i - 1])
+                    if h2 > target:
+                        h = self._paint(*FIT_LADDER[i])   # 退回上一档
+                        break
+                    i, h = i - 1, h2
+            else:
+                while i < len(FIT_LADDER) - 1:
+                    i += 1
+                    h = self._paint(*FIT_LADDER[i])
+                    if h <= target:
+                        break
+            self._fit = i
             if self.win_h:      # 用户定了高度：内容短就留白，长就裁掉
                 h = self.win_h
         self._draw_buttons(w)
