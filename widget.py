@@ -160,15 +160,20 @@ class Widget:
 
     def reset_pos(self):
         sw = self.root.winfo_screenwidth()
-        self.root.geometry(f"+{sw - int(WIDTH * SCALE) - 36}+{48}")
-        self.save_pos()
+        x, y = sw - int(WIDTH * SCALE) - 36, 48
+        self.root.geometry(f"+{x}+{y}")
+        self._write_pos(x, y)   # 直接存算出来的值 —— 这时窗口还没布局，
+                                # winfo_x() 只会返回 0，存进去下次就跑左上角了
 
-    def save_pos(self):
+    def _write_pos(self, x, y):
         try:
             with open(POS_FILE, "w", encoding="utf-8") as fh:
-                json.dump({"x": self.root.winfo_x(), "y": self.root.winfo_y()}, fh)
+                json.dump({"x": x, "y": y}, fh)
         except Exception:
             pass
+
+    def save_pos(self):
+        self._write_pos(self.root.winfo_x(), self.root.winfo_y())
 
     def on_press(self, e):
         self._drag = (e.x_root - self.root.winfo_x(), e.y_root - self.root.winfo_y())
@@ -384,14 +389,19 @@ def startup_path():
 
 
 def install_startup():
-    pyw = sys.executable.replace("python.exe", "pythonw.exe")
-    if not os.path.exists(pyw):
-        pyw = sys.executable
-    script = os.path.join(HERE, "widget.py")
-    vbs = ('Set s = CreateObject("WScript.Shell")\r\n'
-           f's.Run """{pyw}"" ""{script}""", 0, False\r\n')
-    with open(startup_path(), "w", encoding="utf-8") as fh:
-        fh.write(vbs)
+    if FROZEN:                       # exe 版：自启直接指向 exe
+        target = f'"""{sys.executable}"""'
+    else:                            # 脚本版：pythonw + widget.py，这样不弹黑框
+        pyw = sys.executable.replace("python.exe", "pythonw.exe")
+        if not os.path.exists(pyw):
+            pyw = sys.executable
+        target = f'"""{pyw}"" ""{os.path.join(HERE, "widget.py")}"""'
+    # .vbs 必须按系统 ANSI 编码写、CRLF 换行：用 UTF-8 的话，路径里只要有中文
+    # （比如 exe 叫「日程组件.exe」），WScript 读出来就是乱码，自启直接失效
+    with open(startup_path(), "w", encoding="mbcs", errors="replace",
+              newline="\r\n") as fh:
+        fh.write('Set s = CreateObject("WScript.Shell")\n')
+        fh.write(f"s.Run {target}, 0, False\n")
     print("已装进开机自启：", startup_path())
 
 

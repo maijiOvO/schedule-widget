@@ -27,8 +27,11 @@ git clone "G:/我的云端硬盘/Study.git" D:/Study
 双击 `_schedule/安装到这台电脑.bat`。它会检查 Python、设好开机自启、然后
 立刻把组件启起来。
 
-没有 Python 的话它会告诉你去哪装（要勾 **Add python.exe to PATH**），
-或者直接用 `日程组件.exe`（见下）。
+没有 Python 的话它会告诉你去哪装（要勾 **Add python.exe to PATH**）。
+
+实在不想装 Python，Drive 上有打好的绿色版：
+`G:/我的云端硬盘/Study-便携版/日程组件.exe`，双击就跑。但它把数据编译进去了，
+改了日程要重新打包 —— 见文末。
 
 ### 3. 日历（可选）
 
