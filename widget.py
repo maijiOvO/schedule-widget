@@ -38,6 +38,8 @@ FROZEN = getattr(sys, "frozen", False)   # 是否是 PyInstaller 打出来的 ex
 # 打包后 __file__ 指向临时解压目录，位置要用 exe 自己所在的目录
 HERE = os.path.dirname(sys.executable if FROZEN else os.path.abspath(__file__))
 POS_FILE = os.path.join(HERE, ".widget_pos.json")
+if "--at" in sys.argv:      # 调样式/跑测试时别动真实的位置文件
+    POS_FILE = os.path.join(HERE, ".widget_pos.test.json")
 SCHEDULE_MD = os.path.join(HERE, "..", "学期日程.md")
 
 
@@ -103,11 +105,13 @@ NOW_BG  = "#1b2430"
 
 WEEK_CN = "一二三四五六日"
 
-# 八个方向对应的鼠标指针（用 X11 标准名，Tk 在 Windows 上有映射）
-CURSORS = {"nw": "top_left_corner", "ne": "top_right_corner",
-           "sw": "bottom_left_corner", "se": "bottom_right_corner",
-           "n": "top_side", "s": "bottom_side",
-           "w": "left_side", "e": "right_side"}
+# 八个方向的鼠标指针。必须用 size_* 这套 —— 实测只有它们映射到 Windows 系统
+# 光标（IDC_SIZENWSE 等），会跟随系统光标主题；X11 那套名字（top_left_corner
+# 之类）Tk 是用自带的黑白位图画的，又糙又老。
+CURSORS = {"nw": "size_nw_se", "se": "size_nw_se",
+           "ne": "size_ne_sw", "sw": "size_ne_sw",
+           "n": "size_ns", "s": "size_ns",
+           "w": "size_we", "e": "size_we"}
 
 
 def mins(t):
@@ -141,6 +145,11 @@ class Widget:
         self._mode = None       # None / move / resize / button
         self._drag = None
         self._rz = None         # resize 起始快照
+        self._rz_job = None     # 节流用的 after id
+        self._pending = None    # 最后一次鼠标位置
+        self._wheel_job = None  # 滚轮也按帧合并
+        self._wheel_to = None   # 累加出来的目标字号
+        self._wheel_at = None
         self._btns = []         # [(x1, y1, x2, y2, 回调, 名字)]，物理坐标
         self._hot = None        # 鼠标正悬在哪个按钮上
         self._fit = 0           # 上次用的 FIT_LADDER 档位，下次从这里接着找
@@ -151,9 +160,10 @@ class Widget:
         root.configure(bg=BG)
         root.tk.call("tk", "scaling", DPI / 72.0)   # 字体按真实 DPI 排版
 
-        self.canvas = tk.Canvas(root, bg=BG, highlightthickness=1,
-                                highlightbackground=LINE, bd=0)
-        self.canvas.pack()
+        # 撑满窗口：尺寸只由 root.geometry 决定一次，canvas 自己跟上。
+        # 边框改成自己画（highlightthickness 会让内容整体偏移 1px）
+        self.canvas = tk.Canvas(root, bg=BG, highlightthickness=0, bd=0)
+        self.canvas.pack(fill="both", expand=True)
 
         self.fonts = {k: tkfont.Font(family="Microsoft YaHei", size=v,
                                      weight="bold" if k in ("time", "big") else "normal")
@@ -197,7 +207,7 @@ class Widget:
         for k, base in FONT_BASE.items():
             self.fonts[k].configure(size=max(6, round(base * self.ui)))
 
-    def set_ui(self, v, save=True):
+    def set_ui(self, v, save=True, redraw=True):
         """只改字号（连带间距）。卡片宽度是 self.W，跟这个无关。"""
         v = max(UI_MIN, min(UI_MAX, v))
         if abs(v - self.ui) < 0.004:
@@ -206,7 +216,8 @@ class Widget:
             self.win_h = int(self.win_h * v / self.ui)
         self.ui = v
         self.apply_fonts()
-        self.render()
+        if redraw:
+            self.render()
         if save:
             self.save_state()
         return True
@@ -220,19 +231,28 @@ class Widget:
             self.save_state()
 
     def on_wheel(self, e):
-        """以鼠标为锚点缩放 —— 鼠标底下那个点保持不动，而不是钉住左上角"""
+        """以鼠标为锚点缩放 —— 鼠标底下那个点保持不动，而不是钉住左上角。
+        滚轮事件比屏幕刷新密，所以把连续几格累成一次画，否则整块字会闪。"""
         x0, y0 = self.root.winfo_x(), self.root.winfo_y()
         w0, h0 = max(1, self.root.winfo_width()), max(1, self.root.winfo_height())
         fx = (e.x_root - x0) / w0        # 鼠标在卡片里的相对位置
         fy = (e.y_root - y0) / h0
-        if self.set_ui(self.ui * (WHEEL_STEP if e.delta > 0 else 1 / WHEEL_STEP),
-                       save=False):
-            self.root.update_idletasks()
-            w1, h1 = self.root.winfo_width(), self.root.winfo_height()
-            self.root.geometry(f"+{round(e.x_root - fx * w1)}"
-                               f"+{round(e.y_root - fy * h1)}")
-            self.save_state()
+        base = self._wheel_to if self._wheel_to else self.ui
+        self._wheel_to = max(UI_MIN, min(UI_MAX,
+                                         base * (WHEEL_STEP if e.delta > 0
+                                                 else 1 / WHEEL_STEP)))
+        self._wheel_at = (e.x_root, e.y_root, fx, fy)
+        if self._wheel_job is None:
+            self._wheel_job = self.root.after(12, self._flush_wheel)
         return "break"
+
+    def _flush_wheel(self):
+        self._wheel_job = None
+        target, anchor = self._wheel_to, self._wheel_at
+        self._wheel_to = None
+        if target and self.set_ui(target, save=False, redraw=False):
+            self.render(anchor=anchor)
+            self.save_state()
 
     # ---- 折叠 ----
     def toggle_collapse(self):
@@ -353,17 +373,25 @@ class Widget:
 
     def on_drag(self, e):
         if self._mode == "resize" and self._rz:
-            self._do_resize(e)
+            # 按帧合并：鼠标事件比屏幕刷新密得多，每来一个就重画会闪
+            self._pending = (e.x_root, e.y_root)
+            if self._rz_job is None:
+                self._rz_job = self.root.after(12, self._flush_resize)
         elif self._mode == "move" and self._drag:
             self.root.geometry(f"+{e.x_root - self._drag[0]}+{e.y_root - self._drag[1]}")
             self.save_state()
         return "break"
 
-    def _do_resize(self, e):
+    def _flush_resize(self):
+        self._rz_job = None
+        if self._pending and self._rz:
+            self._do_resize(*self._pending)
+
+    def _do_resize(self, mx, my):
         """拖边 = 只朝那个方向拉；拖角 = 钉住对角，宽高各自变。
         全程不动字号 —— 字号是滚轮的事。"""
         z, mx0, my0, x0, y0, w0, h0, W0 = self._rz
-        dx, dy = e.x_root - mx0, e.y_root - my0
+        dx, dy = mx - mx0, my - my0
 
         w = w0
         if "e" in z:
@@ -389,10 +417,15 @@ class Widget:
         self.W = newW
         if "n" in z or "s" in z:      # 只有真的拖了上下方向才锁高度
             self.win_h = h
-        self.render()
-        self.root.geometry(f"+{x}+{y}")
+        self.render(move_to=(x, y))
 
     def on_release(self, e):
+        if self._rz_job is not None:      # 节流可能还压着最后一帧，补画
+            self.root.after_cancel(self._rz_job)
+            self._rz_job = None
+            if self._pending and self._rz:
+                self._do_resize(*self._pending)
+        self._pending = None
         if self._mode in ("resize", "button"):
             self.save_state()
         self._mode = None
@@ -696,7 +729,11 @@ class Widget:
             c.scale("all", 0, 0, self.scale, self.scale)
         return int(y * self.scale)
 
-    def render(self):
+    def render(self, move_to=None, anchor=None):
+        """尺寸和位置在同一次 geometry 里改完 —— 分开改会让 Windows 多走一轮
+        重绘，拖动和缩放时看着就是在闪。
+        anchor=(鼠标x, 鼠标y, fx, fy)：画完之后把卡片挪到让相对点 (fx,fy)
+        正好落在鼠标底下，滚轮缩放靠它做到「鼠标底下那个点不动」。"""
         w = int(self.W * self.scale)
         if self.collapsed:
             h = self._paint_collapsed()
@@ -723,8 +760,14 @@ class Widget:
             if self.win_h:      # 用户定了高度：内容短就留白，长就裁掉
                 h = self.win_h
         self._draw_buttons(w)
-        self.canvas.configure(width=w, height=h)
-        self.root.geometry(f"{w}x{h}")
+        self.canvas.create_rectangle(0, 0, w - 1, h - 1, outline=LINE)
+        if anchor:
+            mx, my, fx, fy = anchor
+            move_to = (round(mx - fx * w), round(my - fy * h))
+        g = f"{w}x{h}"
+        if move_to:
+            g += f"+{move_to[0]}+{move_to[1]}"
+        self.root.geometry(g)
 
     def tick(self):
         self.render()
