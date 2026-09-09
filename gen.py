@@ -4,10 +4,9 @@
 数据全在 data.py。改完数据重跑本文件即可。
 """
 import datetime as dt
+import os
 
-from data import *  # noqa: F401,F403 —— 日程数据
-
-OUT_DIR = "D:/Study/_schedule"
+from data import *  # noqa: F401,F403 —— 日程数据（OUT_DIR / VAULT 也在里面）
 
 # ---- ics 构造 -------------------------------------------------------------
 lines_out = []
@@ -529,6 +528,6 @@ python _schedule/gen.py
 重新导入前，先在日历 app 里删掉旧的那个日历（两个文件各自是独立日历，删除干净再导，否则会重复）。
 """)
 
-with open(f"{OUT_DIR}/../学期日程.md", "w", encoding="utf-8") as f:
+with open(os.path.join(VAULT, "学期日程.md"), "w", encoding="utf-8") as f:
     f.write("\n".join(MD))
 print("学期日程.md ok")

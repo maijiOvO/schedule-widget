@@ -10,16 +10,28 @@
 """
 import ctypes
 import datetime as dt
+import os
 import sys
 
 from PIL import Image, ImageDraw, ImageFont
 
-from data import (LOOKAHEAD, NO_CLASS, READING_WEEK, classes_on, next_exam,
+from data import (OUT_DIR, VAULT, LOOKAHEAD, NO_CLASS, READING_WEEK, classes_on, next_exam,
                   upcoming, urgency, week_no, when_cn)
 
-OUT = "D:/Study/_schedule/桌面日程.png"
-W, H = 2560, 1440
-PANEL_X, PANEL_W = 1450, 1010      # 右侧面板，左边 1450px 留给桌面图标
+OUT = os.path.join(OUT_DIR, "桌面日程.png")
+def screen_size():
+    """跟着这台机器的主屏走，不写死 2560x1440"""
+    try:
+        u = ctypes.windll.user32
+        u.SetProcessDPIAware()
+        return u.GetSystemMetrics(0), u.GetSystemMetrics(1)
+    except Exception:
+        return 2560, 1440
+
+
+W, H = screen_size()
+PANEL_W = min(1010, int(W * 0.40))     # 右侧面板宽度
+PANEL_X = W - PANEL_W - 100            # 左边全部留给桌面图标
 
 BG        = (13, 17, 23)
 BG2       = (22, 27, 34)
@@ -34,7 +46,10 @@ YELLOW    = (210, 180, 100)        # 4-7 天
 PURPLE    = (198, 160, 246)        # 考试
 URG       = [RED, ORANGE, YELLOW, DIM]   # data.urgency() 的 4 个等级
 
-REG, BOLD, LIGHT = "C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/msyhbd.ttc", "C:/Windows/Fonts/msyhl.ttc"
+_FONTS = os.path.join(os.environ.get("WINDIR", "C:/Windows"), "Fonts")
+REG   = os.path.join(_FONTS, "msyh.ttc")
+BOLD  = os.path.join(_FONTS, "msyhbd.ttc")
+LIGHT = os.path.join(_FONTS, "msyhl.ttc")
 F = {}
 
 
@@ -150,7 +165,7 @@ def draw(today):
                f"{ed.month}/{ed.day} {h1:02d}:{m1:02d}", font=f(26), fill=DIM,
                anchor="ra")
 
-    d.text((x, H - 42), f"更新于 {dt.datetime.now():%m-%d %H:%M}  ·  D:/Study/学期日程.md",
+    d.text((x, H - 42), f"更新于 {dt.datetime.now():%m-%d %H:%M}  ·  {os.path.join(VAULT, chr(23398)+chr(26399)+chr(26085)+chr(31243))}.md",
            font=f(20), fill=(70, 78, 88))
     return img
 

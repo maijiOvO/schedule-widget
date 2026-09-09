@@ -31,9 +31,33 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 POS_FILE = os.path.join(HERE, ".widget_pos.json")
 SCHEDULE_MD = os.path.join(HERE, "..", "学期日程.md")
 
-WIDTH = 440
-PAD = 20
+def dpi_scale():
+    """这台机器的显示缩放：96 DPI = 100% = 1.0，144 DPI = 150% = 1.5。
+    笔记本多半不是 100%，尺寸和字号都得跟着走，否则组件会缩成一小块。"""
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)   # 必须在建窗口前
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            return 1.0, 96
+    try:
+        dpi = ctypes.windll.user32.GetDpiForSystem()
+    except Exception:
+        dpi = 96
+    return dpi / 96.0, dpi
+
+
+UI_SCALE = 1.0   # 嫌大就调小（0.85 之类），嫌小就调大。1.0 = 完全跟随系统缩放
+
+_sys_scale, DPI = dpi_scale()
+SCALE = _sys_scale * UI_SCALE
+
+WIDTH = 440          # 以下都是 100% 缩放下的逻辑像素，
+PAD = 20             # 画完之后整块按 SCALE 放大（见 render 末尾）
 REFRESH_MS = 15_000
+TODO_MAX = 4      # 「该动手了」最多列几条
+REST_MAX = 6      # 「接下来」最多列几条
 ALPHA_IDLE, ALPHA_HOVER = 0.92, 1.0
 
 BG      = "#12161c"
@@ -79,8 +103,9 @@ class Widget:
         root.attributes("-alpha", ALPHA_IDLE)
         root.configure(bg=BG)
 
-        self.canvas = tk.Canvas(root, width=WIDTH, bg=BG, highlightthickness=1,
-                                highlightbackground=LINE, bd=0)
+        root.tk.call("tk", "scaling", DPI / 72.0)   # 字体按真实 DPI 排版
+        self.canvas = tk.Canvas(root, width=int(WIDTH * SCALE), bg=BG,
+                                highlightthickness=1, highlightbackground=LINE, bd=0)
         self.canvas.pack()
 
         self.f_time  = tkfont.Font(family="Microsoft YaHei", size=19, weight="bold")
@@ -118,16 +143,22 @@ class Widget:
 
     # ---- 位置 ----
     def restore_pos(self):
+        """恢复上次的位置。换台机器（屏幕更小）时存的坐标可能已经在屏幕外，
+        那样组件就永远看不见了 —— 越界就退回右上角。"""
         try:
             with open(POS_FILE, encoding="utf-8") as fh:
                 p = json.load(fh)
-            self.root.geometry(f"+{p['x']}+{p['y']}")
+            sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+            x, y = int(p["x"]), int(p["y"])
+            if not (-40 <= x <= sw - 120 and -10 <= y <= sh - 120):
+                raise ValueError("上次的位置不在这块屏幕上")
+            self.root.geometry(f"+{x}+{y}")
         except Exception:
             self.reset_pos()
 
     def reset_pos(self):
         sw = self.root.winfo_screenwidth()
-        self.root.geometry(f"+{sw - WIDTH - 36}+{48}")
+        self.root.geometry(f"+{sw - int(WIDTH * SCALE) - 36}+{48}")
         self.save_pos()
 
     def save_pos(self):
@@ -228,8 +259,8 @@ class Widget:
 
         # ── 今天剩下 ──
         rest = [k for k in cls if mins(k[0]) > nm]
-        if cur:
-            rest = [k for k in rest]
+        if not cur and nxt and rest and rest[0] is nxt:
+            rest = rest[1:]      # 只有真的画了「下一节」时才去重；正在上课时它没画
         if rest:
             self.rule(y)
             y += 14
@@ -240,7 +271,7 @@ class Widget:
                                    fill=kind_color(kind), outline="")
                 self.txt(PAD + 12, y, f"{h1:02d}:{m1:02d}", self.f_small, kind_color(kind))
                 self.txt(PAD + 76, y, title, self.f_body, FG,
-                         maxw=WIDTH - PAD - 60 - (PAD + 76))
+                         maxw=(WIDTH - PAD - 60 - (PAD + 76)) * SCALE)
                 self.txt(WIDTH - PAD, y + 1, room, self.f_small, FAINT, "ne")
                 y += 26
             y += 6
@@ -261,7 +292,7 @@ class Widget:
             y += 14
             self.txt(PAD, y, "该动手了", self.f_head, DIM)
             y += 22
-            for it in todo[:4]:
+            for it in todo[:TODO_MAX]:
                 n = it.days_left(today)
                 col = URG[urgency(n)] if it.hard or it.kind == "exam" else DIM
                 is_exam = it.kind == "exam"
@@ -270,7 +301,7 @@ class Widget:
                 label = it.label
                 w = self.txt(PAD + 18, y, label, self.f_body,
                              PURPLE if is_exam else FG,
-                             maxw=WIDTH - PAD - 88 - (PAD + 18))
+                             maxw=(WIDTH - PAD - 88 - (PAD + 18)) * SCALE)
                 bx = self.canvas.bbox(w)[2]
                 self.txt(bx + 10, y + 2,
                          "复习" if it.hours is None else f"{it.hours:g}h",
@@ -278,8 +309,8 @@ class Widget:
                 tail = ("今天 %02d:%02d" % it.at) if n == 0 else when_cn(n)
                 self.txt(WIDTH - PAD, y + 1, tail, self.f_small, col, "ne")
                 y += 26
-            if len(todo) > 4:
-                self.txt(PAD + 18, y, f"⋯ 还有 {len(todo) - 4} 件", self.f_small, FAINT)
+            if len(todo) > TODO_MAX:
+                self.txt(PAD + 18, y, f"⋯ 还有 {len(todo) - TODO_MAX} 件", self.f_small, FAINT)
                 y += 24
             y += 6
 
@@ -289,7 +320,7 @@ class Widget:
             self.txt(PAD, y, "接下来", self.f_head, DIM)
             y += 22
             last = None
-            for it in rest[:6]:
+            for it in rest[:REST_MAX]:
                 n = it.days_left(today)
                 col = URG[urgency(n)] if it.hard else DIM
                 if it.date != last:
@@ -307,10 +338,10 @@ class Widget:
                 self.txt(PAD + 92, y, it.text,
                          self.f_body if it.hard else self.f_small,
                          PURPLE if it.kind == "exam" else (FG if it.hard else DIM),
-                         maxw=WIDTH - PAD - 52 - (PAD + 92))
+                         maxw=(WIDTH - PAD - 52 - (PAD + 92)) * SCALE)
                 y += 25
-            if len(rest) > 6:
-                self.txt(PAD + 92, y, f"⋯ 还有 {len(rest) - 6} 项", self.f_small, FAINT)
+            if len(rest) > REST_MAX:
+                self.txt(PAD + 92, y, f"⋯ 还有 {len(rest) - REST_MAX} 项", self.f_small, FAINT)
                 y += 25
             y += 6
 
@@ -332,8 +363,12 @@ class Widget:
             y += 50
 
         y += 12
-        c.configure(height=y)
-        self.root.geometry(f"{WIDTH}x{y}")
+        # 上面全程用逻辑坐标画，这里一次性缩放到物理像素 —— 字体已由 tk scaling 处理
+        if SCALE != 1.0:
+            c.scale("all", 0, 0, SCALE, SCALE)
+        h = int(y * SCALE)
+        c.configure(width=int(WIDTH * SCALE), height=h)
+        self.root.geometry(f"{int(WIDTH * SCALE)}x{h}")
 
     def tick(self):
         self.render()
@@ -372,11 +407,6 @@ def main():
         return install_startup()
     if "--unstartup" in sys.argv:
         return remove_startup()
-
-    try:      # 高 DPI 下不发虚
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)
-    except Exception:
-        pass
 
     root = tk.Tk()
     today = now = None

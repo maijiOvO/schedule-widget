@@ -5,9 +5,13 @@
 日期要改就改这里，然后重跑 gen.py（出 ics 和 md）和 wallpaper.py（出壁纸）。
 """
 import datetime as dt
+import os
 from dataclasses import dataclass
 
-OUT_DIR = "D:/Study/_schedule"
+# 路径都相对本文件，别写死盘符 —— 换台机器/换个盘符照样跑
+HERE = os.path.dirname(os.path.abspath(__file__))
+VAULT = os.path.dirname(HERE)
+OUT_DIR = HERE
 TZ = "America/Toronto"
 
 # ---- 学期骨架 -------------------------------------------------------------
