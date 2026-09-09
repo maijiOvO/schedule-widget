@@ -108,25 +108,29 @@ def draw(today):
         d.text((x + 24, y), "没有截止事项", font=f(29), fill=DIM)
         y += 50
     last_day = None
-    for day, hard, text, kind, hm in items:
+    for it in items:
         if y > H - 190:
-            d.text((x + 24, y), f"⋯ 还有 {len([i for i in items if i[0] >= day])} 项",
+            d.text((x + 24, y), f"⋯ 还有 {len([i for i in items if i.date >= it.date])} 项",
                    font=f(25), fill=DIM)
             break
-        n = (day - today).days
+        day, hard, kind = it.date, it.hard, it.kind
+        n = it.days_left(today)
         color = URG[urgency(n)] if hard else DIM
         if day != last_day:
-            same = [h for dd, h, _t, _k, _hm in items if dd == day]
-            lab = URG[urgency(n)] if any(same) else DIM
+            lab = URG[urgency(n)] if any(o.hard for o in items if o.date == day) else DIM
             d.text((x, y + 3), when_cn(n), font=f(26, "bold"), fill=lab)
             last_day = day
         if hard:
             d.ellipse([x + 118, y + 13, x + 130, y + 25], fill=color)
-        d.text((x + 148, y), ("📝 " if kind == "exam" else "") + text,
+        if it.started(today) and it.needs_work:      # 已经该动手的，左侧竖条标出来
+            d.rectangle([x - 18, y + 4, x - 13, y + 36], fill=color)
+        d.text((x + 148, y), ("📝 " if kind == "exam" else "") + it.text,
                font=f(28 if hard else 26),
                fill=PURPLE if kind == "exam" else (FG if hard else DIM))
-        d.text((x + PANEL_W - 60, y + 4), f"{hm[0]:02d}:{hm[1]:02d}",
-               font=f(24), fill=(70, 78, 88), anchor="ra")
+        tail = "%02d:%02d" % it.at
+        if it.hours and not it.started(today):
+            tail = f"{it.start.month}/{it.start.day} 动手 · " + tail
+        d.text((x + PANEL_W - 60, y + 4), tail, font=f(24), fill=(70, 78, 88), anchor="ra")
         y += 46
 
     # ---- 底部：下一场考试 ----

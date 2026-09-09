@@ -245,46 +245,79 @@ class Widget:
                 y += 26
             y += 6
 
-        # ── 接下来的截止 ──
+        # ── 该动手了 / 接下来 ──
         for span in (14, 21, 28, 45):
             items = [it for it in upcoming(today, span)
-                     if it[0] != today or mins(it[4]) >= nm]   # 今天已过点的不再显示
+                     if it.date != today or mins(it.at) >= nm]   # 今天已过点的不再显示
             if len(items) >= 5:
                 break
-        if items:
+
+        # 已经到该动手的日子、还没过截止的，单独拎出来放最上面
+        todo = [it for it in items if it.started(today) and it.needs_work]
+        rest = [it for it in items if it not in todo]
+
+        if todo:
+            self.rule(y)
+            y += 14
+            self.txt(PAD, y, "该动手了", self.f_head, DIM)
+            y += 22
+            for it in todo[:4]:
+                n = it.days_left(today)
+                col = URG[urgency(n)] if it.hard or it.kind == "exam" else DIM
+                is_exam = it.kind == "exam"
+                c.create_oval(PAD, y + 7, PAD + 7, y + 14,
+                              fill=PURPLE if is_exam else col, outline="")
+                label = it.label
+                w = self.txt(PAD + 18, y, label, self.f_body,
+                             PURPLE if is_exam else FG,
+                             maxw=WIDTH - PAD - 88 - (PAD + 18))
+                bx = self.canvas.bbox(w)[2]
+                self.txt(bx + 10, y + 2,
+                         "复习" if it.hours is None else f"{it.hours:g}h",
+                         self.f_small, FAINT)
+                tail = ("今天 %02d:%02d" % it.at) if n == 0 else when_cn(n)
+                self.txt(WIDTH - PAD, y + 1, tail, self.f_small, col, "ne")
+                y += 26
+            if len(todo) > 4:
+                self.txt(PAD + 18, y, f"⋯ 还有 {len(todo) - 4} 件", self.f_small, FAINT)
+                y += 24
+            y += 6
+
+        if rest:
             self.rule(y)
             y += 14
             self.txt(PAD, y, "接下来", self.f_head, DIM)
             y += 22
             last = None
-            for day, hard, text, kind, hm in items[:8]:
-                n = (day - today).days
-                col = URG[urgency(n)] if hard else DIM
-                if day != last:
-                    lab_col = URG[urgency(n)] if any(h for d_, h, _t, _k, _m in items if d_ == day) else DIM
+            for it in rest[:6]:
+                n = it.days_left(today)
+                col = URG[urgency(n)] if it.hard else DIM
+                if it.date != last:
+                    lab_col = URG[urgency(n)] if any(
+                        x.hard for x in rest if x.date == it.date) else DIM
                     self.txt(PAD, y + 1, when_cn(n), self.f_small, lab_col)
-                    last = day
-                if kind == "exam":
+                    last = it.date
+                if it.kind == "exam":
                     c.create_rectangle(PAD + 72, y + 6, PAD + 80, y + 15,
                                        fill=PURPLE, outline="")
-                elif hard:
+                elif it.hard:
                     c.create_oval(PAD + 72, y + 7, PAD + 79, y + 14, fill=col, outline="")
-                self.txt(WIDTH - PAD, y + 1, f"{hm[0]:02d}:{hm[1]:02d}",
+                self.txt(WIDTH - PAD, y + 1, "%02d:%02d" % it.at,
                          self.f_small, FAINT, "ne")
-                self.txt(PAD + 92, y, text,
-                         self.f_body if hard else self.f_small,
-                         PURPLE if kind == "exam" else (FG if hard else DIM),
+                self.txt(PAD + 92, y, it.text,
+                         self.f_body if it.hard else self.f_small,
+                         PURPLE if it.kind == "exam" else (FG if it.hard else DIM),
                          maxw=WIDTH - PAD - 52 - (PAD + 92))
                 y += 25
-            if len(items) > 8:
-                self.txt(PAD + 92, y, f"⋯ 还有 {len(items) - 8} 项", self.f_small, FAINT)
+            if len(rest) > 6:
+                self.txt(PAD + 92, y, f"⋯ 还有 {len(rest) - 6} 项", self.f_small, FAINT)
                 y += 25
             y += 6
 
         # ── 下一场考试 ──
         nx = next_exam(today)
         # 上面「接下来」已经列出来的考试就不再重复一遍
-        shown = {d_ for d_, _h, _t, k, _m in items if k == "exam"} if items else set()
+        shown = {it.date for it in items if it.kind == "exam"}
         if nx and nx[0] not in shown:
             ed, course, name, (h1, m1) = nx
             n = (ed - today).days

@@ -5,6 +5,7 @@
 日期要改就改这里，然后重跑 gen.py（出 ics 和 md）和 wallpaper.py（出壁纸）。
 """
 import datetime as dt
+from dataclasses import dataclass
 
 OUT_DIR = "D:/Study/_schedule"
 TZ = "America/Toronto"
@@ -138,6 +139,59 @@ EXAMS = [
 
 LOOKAHEAD = 14   # 「接下来」默认往前看多少天
 
+# 每类任务：建议提前几天动手 + 大概要几小时。
+# 这套数字是按「syllabus 说了什么 + 截止窗口有多长」估的，不是实测。
+# 做完第一次就回来改成自己的真实耗时 —— 这里改一次，ics 提醒、学期日程.md、
+# 桌面组件三处一起变。
+WORKLOAD = {
+    # 类型      提前天数  小时   说明
+    "prep":    (4, 2.5),   # lab prep：要预算/预仿真，跨一个周末才够
+    "report":  (4, 3.5),   # 实验报告：小组的，得先约上时间
+    "quiz":    (1, 1.0),   # LIN200 quiz 周四放出周五关，窗口本来就只有一天多
+    "read":    (0, 1.0),   # 过 lab handout：当晚一次过完
+    "exam":    (14, None),  # 期中：提前两周进复习
+    "lab":     (0, None),   # lab 本身是去上，不用提前做
+}
+
+
+@dataclass(frozen=True)
+class Item:
+    """一件要做的事。date/at 是截止(或发生)时刻，start 是建议动手的日子。"""
+    date: dt.date
+    hard: bool          # 硬截止（错过有代价） vs 只是日程上的一件事
+    text: str
+    kind: str           # prep / report / quiz / read / exam / lab
+    at: tuple           # (时, 分)
+
+    @property
+    def label(self):
+        """去掉「截止」后缀的干净名字，用在「开始做 X」这种句子里"""
+        return self.text.removesuffix("截止").strip()
+
+    @property
+    def lead(self):
+        return WORKLOAD.get(self.kind, (0, None))[0]
+
+    @property
+    def hours(self):
+        return WORKLOAD.get(self.kind, (0, None))[1]
+
+    @property
+    def start(self):
+        """建议哪天动手"""
+        return self.date - dt.timedelta(days=self.lead)
+
+    @property
+    def needs_work(self):
+        """是要自己花时间做的事（考试复习也算），还是只是去上一节课"""
+        return self.hours is not None or self.kind == "exam"
+
+    def started(self, today):
+        return self.start <= today <= self.date
+
+    def days_left(self, today):
+        return (self.date - today).days
+
 
 # ---- 推算某天有什么 -------------------------------------------
 def classes_on(d):
@@ -169,29 +223,35 @@ def classes_on(d):
 
 
 def upcoming(today, days=LOOKAHEAD):
-    """今天起 days 天内的所有截止/实验/考试。
-    返回 [(日期, 是否硬截止, 文本, 类型, (时, 分))]，类型 = exam/prep/report/quiz/lab/read。
-    带时刻是为了让显示端能把「今天但已经过去」的条目去掉。"""
+    """今天起 days 天内的所有截止/实验/考试，按时间排好，返回 [Item]。
+
+    每项都带「建议哪天动手」和「大概要几小时」—— 见 WORKLOAD。
+    同一天里硬截止排在前面。"""
     out = []
     for n, lab_d, prep_d, rep_d in ECE314_LABS:
-        out.append((prep_d, True, f"ECE314 Lab {n} prep 截止", "prep", (12, 0)))
-        out.append((lab_d, False, f"ECE314 Lab {n}  GB40", "lab", (10, 0)))
-        out.append((rep_d, True, f"ECE314 Lab {n} 报告截止", "report", (23, 59)))
+        out.append(Item(prep_d, True, f"ECE314 Lab {n} prep 截止", "prep", (12, 0)))
+        out.append(Item(lab_d, False, f"ECE314 Lab {n}  GB40", "lab", (10, 0)))
+        out.append(Item(rep_d, True, f"ECE314 Lab {n} 报告截止", "report", (23, 59)))
     for n, lab_d, rep_d in ECE311_LABS:
-        out.append((lab_d, True, f"ECE311 Lab {n} prep 截止", "prep", (15, 0)))
-        out.append((lab_d, False, f"ECE311 Lab {n}  BA3114", "lab", (15, 0)))
-        out.append((rep_d, True, f"ECE311 Lab {n} 报告截止", "report", (23, 59)))
+        out.append(Item(lab_d, True, f"ECE311 Lab {n} prep 截止", "prep", (15, 0)))
+        out.append(Item(lab_d, False, f"ECE311 Lab {n}  BA3114", "lab", (15, 0)))
+        out.append(Item(rep_d, True, f"ECE311 Lab {n} 报告截止", "report", (23, 59)))
     for n, lab_d in ECE334_LABS:
-        out.append((lab_d - dt.timedelta(days=3), False, f"过 ECE334 Lab {n} handout", "read", (19, 0)))
-        out.append((lab_d, False, f"ECE334 Lab {n}  SF2206", "lab", (9, 0)))
+        out.append(Item(lab_d - dt.timedelta(days=3), False,
+                        f"过 ECE334 Lab {n} handout", "read", (19, 0)))
+        out.append(Item(lab_d, False, f"ECE334 Lab {n}  SF2206", "lab", (9, 0)))
     for n, close_d in LIN200_QUIZ:
-        out.append((close_d, True, f"LIN200 Quiz {n} 截止", "quiz", (23, 59)))
+        out.append(Item(close_d, True, f"LIN200 Quiz {n} 截止", "quiz", (23, 59)))
     for c, name, ed, (h1, m1), _e, _note in EXAMS:
-        out.append((ed, True, f"{c} {name}", "exam", (h1, m1)))
+        out.append(Item(ed, True, f"{c} {name}", "exam", (h1, m1)))
     lo, hi = today, today + dt.timedelta(days=days)
-    # 同一天里硬截止排前面（not hard: False 先）
-    return sorted((x for x in out if lo <= x[0] <= hi),
-                  key=lambda x: (x[0], not x[1], x[2]))
+    return sorted((x for x in out if lo <= x.date <= hi),
+                  key=lambda x: (x.date, not x.hard, x.text))
+
+
+def todo_now(today, days=LOOKAHEAD):
+    """已经到了该动手的时候、但还没过截止的事。这就是「我现在该做什么」。"""
+    return [it for it in upcoming(today, days) if it.started(today) and it.needs_work]
 
 
 def next_exam(today):

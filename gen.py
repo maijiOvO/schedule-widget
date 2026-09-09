@@ -187,7 +187,8 @@ for n, lab_d, prep_d, rep_d in ECE314_LABS:
         f"（PRA0103，周一 12:00）开始前交，所以比你上 lab 早两天。\n\n"
         f"迟交每天扣 10%（向上取整）。",
         alarms=[
-            alarm(before_at(dl, 3, 9), f"ECE314 Lab {n} prep 还有 3 天（周一 12:00 截止）"),
+            alarm(before_at(dl, WORKLOAD["prep"][0], 9),
+                  f"今天开始做 ECE314 Lab {n} prep —— 约 {WORKLOAD['prep'][1]:g} 小时，周一 12:00 截止"),
             alarm(before_at(dl, 1, 9), f"ECE314 Lab {n} prep 明天中午 12:00 截止 —— 今天必须做完"),
             alarm("-PT2H", f"ECE314 Lab {n} prep 2 小时后截止"),
         ],
@@ -212,7 +213,8 @@ for n, lab_d, prep_d, rep_d in ECE314_LABS:
         local(rep_d, 23, 0), local(rep_d, 23, 59), "Quercus 提交",
         f"ECE314 Lab {n} 实验报告截止（小组提交，lab 后一周）。\n迟交每天扣 10%。{warn}",
         alarms=[
-            alarm(before_at(dl, 3, 9), f"ECE314 Lab {n} 报告还有 3 天"),
+            alarm(before_at(dl, WORKLOAD["report"][0], 9),
+                  f"今天开始写 ECE314 Lab {n} 报告 —— 约 {WORKLOAD['report'][1]:g} 小时，小组的，先约时间"),
             alarm(before_at(dl, 0, 8), f"ECE314 Lab {n} 报告今晚截止"),
         ],
         cats="截止",
@@ -229,7 +231,8 @@ for n, lab_d, rep_d in ECE311_LABS:
         f"⚠️ ECE311 迟交政策是最严的：不接受任何迟交，不接受邮件提交，迟交直接 0 分。"
         f"如果确实赶不上，必须在截止前联系老师拿许可。",
         alarms=[
-            alarm(before_at(dl, 4, 9), f"ECE311 Lab {n} prep 还有 4 天 —— 周末开始做"),
+            alarm(before_at(dl, WORKLOAD["prep"][0], 9),
+                  f"今天开始做 ECE311 Lab {n} prep —— 约 {WORKLOAD['prep'][1]:g} 小时，周五 15:00 截止，迟交 0 分"),
             alarm(before_at(dl, 2, 9), f"ECE311 Lab {n} prep 还有 2 天"),
             alarm("-PT3H", f"ECE311 Lab {n} prep 今天 15:00 前必须交（迟交 0 分）"),
         ],
@@ -242,7 +245,8 @@ for n, lab_d, rep_d in ECE311_LABS:
         f"ECE311 Lab {n}: {ECE311_LAB_TITLES[n]}\n实验报告截止（小组提交，lab 后一周）。\n"
         f"⚠️ 迟交 0 分，无例外。",
         alarms=[
-            alarm(before_at(dl, 3, 9), f"ECE311 Lab {n} 报告还有 3 天（迟交 0 分）"),
+            alarm(before_at(dl, WORKLOAD["report"][0], 9),
+                  f"今天开始写 ECE311 Lab {n} 报告 —— 约 {WORKLOAD['report'][1]:g} 小时，迟交 0 分"),
             alarm(before_at(dl, 0, 8), f"ECE311 Lab {n} 报告今晚截止 —— 迟交 0 分"),
         ],
         cats="截止",
@@ -286,7 +290,8 @@ for n, close_d in LIN200_QUIZ:
         f"可以用讲义和课本，不能用其他网络资源或 AI，必须独立完成。\n"
         f"除特殊情况外没有补考机会（答案在截止后很快公布）。",
         alarms=[
-            alarm(before_at(dl, 1, 18), f"LIN200 Quiz {n} 已放出，现在做掉（明晚 23:59 关闭）"),
+            alarm(before_at(dl, WORKLOAD["quiz"][0], 18),
+                  f"LIN200 Quiz {n} 已放出，今晚做掉 —— 约 {WORKLOAD['quiz'][1]:g} 小时，明晚 23:59 关闭"),
             alarm(before_at(dl, 0, 18), f"LIN200 Quiz {n} 今晚 23:59 关闭 —— 还没做就现在做"),
         ],
         cats="截止",
@@ -300,7 +305,8 @@ for c, name, d, (h1, m1), (h2, m2), note in EXAMS:
         local(d, h1, m1), local(d, h2, m2), "教室待通知",
         f"{c}（{CN[c]}） {name}\n{d.strftime('%Y-%m-%d')} {h1:02d}:{m1:02d}-{h2:02d}:{m2:02d}\n\n{note}",
         alarms=[
-            alarm(before_at(dl, 14, 9), f"{c} {name} 还有两周 —— 开始复习"),
+            alarm(before_at(dl, WORKLOAD["exam"][0], 9),
+                  f"今天开始复习 {c} {name} —— 还有 {WORKLOAD['exam'][0]} 天"),
             alarm(before_at(dl, 7, 9), f"{c} {name} 还有一周"),
             alarm(before_at(dl, 3, 9), f"{c} {name} 还有 3 天"),
             alarm(before_at(dl, 0, 7), f"今天 {h1:02d}:{m1:02d} {c} {name}"),
@@ -402,6 +408,18 @@ add(dt.date(2026, 10, 12), -2, "🍁 感恩节，全天停课")
 add(dt.date(2026, 11, 17), -2, "⚠️ **最后退课日**")
 add(dt.date(2026, 12, 8), -2, "🎓 最后上课日")
 
+# 建议动手日单独插一条 —— 翻到那一周就知道该起手了，不用自己倒推
+for _it in upcoming(TERM_START, 400):
+    if not _it.needs_work or _it.start == _it.date:
+        continue
+    _due = f"{_it.date.month}月{_it.date.day}日"
+    if _it.kind == "exam":
+        add(_it.start, 0.5, f"▶ **开始复习 {_it.text}**（{_due} 考）")
+    else:
+        add(_it.start, 0.5,
+            f"▶ **开始做 {_it.label}**"
+            f"（约 {_it.hours:g} 小时，{_due} 截止）")
+
 MD.append("""# 2026 Fall 学期日程
 
 > 由 `_schedule/gen.py` 从各科 syllabus 自动生成。改日期请改脚本再重跑，别直接改这个文件。
@@ -418,6 +436,22 @@ MD.append("""# 2026 Fall 学期日程
 | ❓ **ECE334 有没有单独计分的 prelab** | syllabus 没写。第一次 lab（9月24日）时问 TA。如果有，把日程里的「过一遍 handout」改成硬截止。 |
 | ❓ **五门课的 Final 日期全部 TBD** | 都在 12月10-22 考试期内，学校统一公布。出来后补进脚本。 |
 | ❓ **ECE311 习题课教室** | syllabus 写 BA1200，你之前记的是 BA1220。第一次去之前在 ACORN 上确认一下。 |
+
+## 任务要花多久
+
+「▶ 开始做」的日子是从截止倒推的，倒推多少天、预计几小时写在 `_schedule/data.py`
+的 `WORKLOAD` 里：
+
+| 类型 | 提前动手 | 预计耗时 | 为什么这么定 |
+|---|---|---|---|
+| Lab prep | 4 天 | 2.5 小时 | 要预算、预仿真，得跨一个周末才够 |
+| 实验报告 | 4 天 | 3.5 小时 | 小组交的，得先约上时间 |
+| LIN200 Quiz | 1 天 | 1 小时 | 周四放出周五关，窗口本来就只有一天多 |
+| 过 lab handout | 当天 | 1 小时 | 一晚上过完 |
+| 期中复习 | 14 天 | — | 提前两周进状态 |
+
+**这套数字是估的，不是实测。** 做完第一个 lab、写完第一份报告之后回来改成真实耗时
+—— 改一次，ics 提醒、这个文件、桌面组件三处一起变。
 
 ## 每周
 
