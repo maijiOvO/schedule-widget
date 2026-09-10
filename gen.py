@@ -5,8 +5,17 @@
 """
 import datetime as dt
 import os
+import sys
 
 from data import *  # noqa: F401,F403 —— 日程数据（OUT_DIR / VAULT 也在里面）
+
+# 库不在仓库旁边了，第一次跑（或换台机器）用 --vault 指一次，之后就记住了：
+#     python gen.py --vault D:/Study
+if "--vault" in sys.argv:
+    VAULT = save_vault(sys.argv[sys.argv.index("--vault") + 1])
+if not VAULT:
+    sys.exit("找不到 Obsidian 库，学期日程.md 不知道该写去哪 —— 跑一次 "
+             "python gen.py --vault <库的路径>，或设环境变量 STUDY_VAULT。")
 
 # ---- ics 构造 -------------------------------------------------------------
 lines_out = []
@@ -360,7 +369,7 @@ body += allday(dt.date(2026, 9, 14), dt.date(2026, 9, 14),
                "· 评分权重（作业/期中/期末各占多少）\n"
                "· 有没有要交的作业，多久一次\n"
                "· 有没有 lab / project\n\n"
-               "拿到后放进 G:\\我的云端硬盘\\GoodNotes\\2026fall\\ECE302\\，然后重跑 _schedule/gen.py。",
+               "拿到后放进 G:\\我的云端硬盘\\GoodNotes\\2026fall\\ECE302\\，然后重跑 schedule-widget/gen.py。",
                alarms=[alarm("PT9H", "今天 ECE302 上课记得问 syllabus（期中日期、评分权重、作业安排）")])
 
 with open(f"{OUT_DIR}/任务与考试.ics", "w", encoding="utf-8", newline="") as f:
@@ -421,8 +430,8 @@ for _it in upcoming(TERM_START, 400):
 
 MD.append("""# 2026 Fall 学期日程
 
-> 由 `_schedule/gen.py` 从各科 syllabus 自动生成。改日期请改脚本再重跑，别直接改这个文件。
-> 手机 / iPad / 电脑的推送提醒来自 `_schedule/任务与考试.ics`。
+> 由 `schedule-widget/gen.py` 从各科 syllabus 自动生成。改日期请改脚本再重跑，别直接改这个文件。
+> 手机 / iPad / 电脑的推送提醒来自 `schedule-widget/任务与考试.ics`。
 
 ## 先看这几条
 
@@ -438,7 +447,7 @@ MD.append("""# 2026 Fall 学期日程
 
 ## 任务要花多久
 
-「▶ 开始做」的日子是从截止倒推的，倒推多少天、预计几小时写在 `_schedule/data.py`
+「▶ 开始做」的日子是从截止倒推的，倒推多少天、预计几小时写在 `schedule-widget/data.py`
 的 `WORKLOAD` 里：
 
 | 类型 | 提前动手 | 预计耗时 | 为什么这么定 |
@@ -512,7 +521,7 @@ MD.append("""## 各科评分构成
 
 ## 日历文件怎么用
 
-`_schedule/` 下两个 ics：
+`schedule-widget/` 下两个 ics：
 
 | 文件 | 内容 | 导到哪 |
 |---|---|---|
@@ -522,7 +531,7 @@ MD.append("""## 各科评分构成
 重新生成：
 
 ```
-python _schedule/gen.py
+python schedule-widget/gen.py
 ```
 
 重新导入前，先在日历 app 里删掉旧的那个日历（两个文件各自是独立日历，删除干净再导，否则会重复）。

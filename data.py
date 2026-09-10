@@ -10,8 +10,41 @@ from dataclasses import dataclass
 
 # 路径都相对本文件，别写死盘符 —— 换台机器/换个盘符照样跑
 HERE = os.path.dirname(os.path.abspath(__file__))
-VAULT = os.path.dirname(HERE)
 OUT_DIR = HERE
+
+# 学期日程.md 要写进 Obsidian 库，而库和这个仓库现在是两个地方（仓库在桌面，
+# 库在 D:/Study），所以库的位置得显式记下来。
+CONFIG_DIR = os.path.join(os.environ.get("APPDATA", HERE), "schedule-widget")
+VAULT_FILE = os.path.join(CONFIG_DIR, "vault.txt")
+
+
+def save_vault(path):
+    """记住 Obsidian 库在哪。存进 %APPDATA% 而不是仓库里或 exe 旁边 —— exe 会被
+    拷到任何地方，仓库又归 git 管，两处都不适合放这种一台机器一个样的配置。"""
+    path = os.path.abspath(path)
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    with open(VAULT_FILE, "w", encoding="utf-8") as fh:
+        fh.write(path)
+    return path
+
+
+def find_vault():
+    """按 环境变量 → 配置文件 → 老布局 的顺序找，都没有就返回 None，
+    由调用方决定是报错（gen.py 必须要有）还是安静跳过（组件只是少个双击）。"""
+    cand = [os.environ.get("STUDY_VAULT")]
+    if os.path.exists(VAULT_FILE):
+        with open(VAULT_FILE, encoding="utf-8") as fh:
+            cand.append(fh.read().strip())
+    legacy = os.path.dirname(HERE)      # 老布局：代码放在库里的 schedule-widget/ 下
+    if os.path.isdir(os.path.join(legacy, ".obsidian")):
+        cand.append(legacy)
+    for c in cand:
+        if c and os.path.isdir(c):
+            return os.path.abspath(c)
+    return None
+
+
+VAULT = find_vault()
 TZ = "America/Toronto"
 
 # ---- 学期骨架 -------------------------------------------------------------

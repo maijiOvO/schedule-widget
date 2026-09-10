@@ -1,0 +1,6 @@
+# 这几类文件 git 一律原样存取，不做换行/编码转换：
+#   .ics  RFC 5545 规定必须 CRLF，转成 LF 日历可能拒绝导入
+#   .bat/.vbs  是 GBK 编码 + CRLF，中文 Windows 控制台才不乱码
+*.ics -text
+*.bat -text
+*.vbs -text

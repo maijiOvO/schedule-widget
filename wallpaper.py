@@ -4,9 +4,9 @@
 数据全部来自 data.py（和 ics、学期日程.md 同源）。
 内容画在屏幕右侧，左边留给桌面图标。
 
-    python _schedule/wallpaper.py          # 只生成图片
-    python _schedule/wallpaper.py --set    # 生成并设为桌面壁纸
-    python _schedule/wallpaper.py --set --date 2026-10-05   # 预览某一天的效果
+    python schedule-widget/wallpaper.py          # 只生成图片
+    python schedule-widget/wallpaper.py --set    # 生成并设为桌面壁纸
+    python schedule-widget/wallpaper.py --set --date 2026-10-05   # 预览某一天的效果
 """
 import ctypes
 import datetime as dt

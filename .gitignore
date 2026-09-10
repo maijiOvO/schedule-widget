@@ -1,0 +1,10 @@
+# 窗口位置：每台机器不一样，不入库
+.widget_pos.json
+.widget_pos.test.json
+# 打包产物：10MB+ 的二进制不进库，需要时用 build_exe.py 现打
+*.exe
+.build/
+__pycache__/
+*.pyc
+# 壁纸是渲染出来的
+桌面日程.png

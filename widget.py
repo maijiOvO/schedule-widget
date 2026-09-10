@@ -7,10 +7,10 @@
 
 数据来自 data.py，和 ics、学期日程.md、壁纸同源。
 
-    pythonw _schedule/widget.py              # 启动（不带控制台窗口）
-    python  _schedule/widget.py --startup    # 装进开机自启
-    python  _schedule/widget.py --unstartup  # 取消开机自启
-    python  _schedule/widget.py --shot out.png   # 截一张当前样子，用来调样式
+    pythonw schedule-widget/widget.py              # 启动（不带控制台窗口）
+    python  schedule-widget/widget.py --startup    # 装进开机自启
+    python  schedule-widget/widget.py --unstartup  # 取消开机自启
+    python  schedule-widget/widget.py --shot out.png   # 截一张当前样子，用来调样式
 
 鼠标：
     右上角三个按钮   折叠/展开 · 恢复默认大小 · 立即刷新
@@ -31,8 +31,9 @@ import tkinter as tk
 import tkinter.font as tkfont
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from data import (NO_CLASS, READING_WEEK, TERM_END, TERM_START, classes_on,
-                  next_exam, upcoming, urgency, week_no, when_cn)
+from data import (NO_CLASS, READING_WEEK, TERM_END, TERM_START, VAULT,
+                  classes_on, next_exam, save_vault, upcoming, urgency,
+                  week_no, when_cn)
 
 FROZEN = getattr(sys, "frozen", False)   # 是否是 PyInstaller 打出来的 exe
 # 打包后 __file__ 指向临时解压目录，位置要用 exe 自己所在的目录
@@ -40,7 +41,11 @@ HERE = os.path.dirname(sys.executable if FROZEN else os.path.abspath(__file__))
 POS_FILE = os.path.join(HERE, ".widget_pos.json")
 if "--at" in sys.argv:      # 调样式/跑测试时别动真实的位置文件
     POS_FILE = os.path.join(HERE, ".widget_pos.test.json")
-SCHEDULE_MD = os.path.join(HERE, "..", "学期日程.md")
+# 库没配过就是 None —— 双击打开日程这一项静默失效，其余功能照常
+SCHEDULE_MD = os.path.join(VAULT, "学期日程.md") if VAULT else None
+
+# 单实例判断靠它认人，别改（改了等于放两个组件进来）
+WINDOW_TITLE = "Study2026Fall_ScheduleWidget"
 
 
 def dpi_scale():
@@ -154,6 +159,7 @@ class Widget:
         self._hot = None        # 鼠标正悬在哪个按钮上
         self._fit = 0           # 上次用的 FIT_LADDER 档位，下次从这里接着找
 
+        root.title(WINDOW_TITLE)     # 无边框窗口也有标题，单实例判断认的就是它
         root.overrideredirect(True)
         root.attributes("-topmost", True)
         root.attributes("-alpha", ALPHA_IDLE)
@@ -443,6 +449,8 @@ class Widget:
         self.menu.tk_popup(e.x_root, e.y_root)
 
     def open_md(self):
+        if not SCHEDULE_MD:
+            return
         try:
             os.startfile(os.path.abspath(SCHEDULE_MD))
         except Exception:
@@ -807,12 +815,17 @@ def remove_startup():
 
 
 def already_running():
-    """开机自启 + 手动双击 = 两个组件叠在一起看不出来。用命名互斥量拦住第二个。
-    句柄不显式关闭，进程退出时系统自己回收。"""
+    """开机自启 + 手动双击 = 两个组件叠在一起看不出来，得拦住第二个。
+
+    判断的依据是「屏幕上有没有那个窗口」，不是「有没有别的进程活着」。
+    原先用命名互斥量：进程一起来就占住，谁占到谁是唯一的一个。问题是互斥量
+    的寿命是进程的寿命 —— 窗口没了进程还在（2026-09-09 就留下这么一个：
+    没有任何窗口，光占着互斥量），后来的实例全被它挡在门外，双击 exe 毫无
+    反应，因为 exe 是无控制台的，连那句「组件已经在运行了」都没地方打。
+    改成找窗口之后，这种僵尸进程自然就不碍事了。"""
     try:
-        k32 = ctypes.windll.kernel32
-        k32.CreateMutexW(None, False, "Study2026Fall_ScheduleWidget")
-        return k32.GetLastError() == 183      # ERROR_ALREADY_EXISTS
+        hwnd = ctypes.windll.user32.FindWindowW(None, WINDOW_TITLE)
+        return bool(hwnd)
     except Exception:
         return False
 
@@ -823,7 +836,16 @@ def main():
     if "--unstartup" in sys.argv:
         return remove_startup()
 
+    if "--vault" in sys.argv:
+        save_vault(sys.argv[sys.argv.index("--vault") + 1])
+        return print("Obsidian 库记下了，重启组件生效")
+
     if "--shot" not in sys.argv and already_running():
+        # exe 版没有控制台，print 出去没人看得见，弹个框说明白
+        if FROZEN:
+            ctypes.windll.user32.MessageBoxW(
+                None, "组件已经在屏幕上了（右上角），不用再开一个。",
+                "日程组件", 0x40)
         print("组件已经在运行了")
         return
 

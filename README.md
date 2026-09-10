@@ -1,8 +1,8 @@
-# 2026 Fall 日程
+# schedule-widget
 
-一份数据，四个出口：日历订阅、Obsidian 页面、桌面组件、壁纸。
+2026 Fall 的学期日程。一份数据，四个出口：日历订阅、Obsidian 页面、桌面组件、壁纸。
 
-数据全部逐条核对自 `GoodNotes/2026fall/` 下各科 syllabus，对应到我自己注册的
+日期全部逐条核对自 `GoodNotes/2026fall/` 下各科 syllabus，对应到我自己注册的
 section（ECE311 PRA0106 · ECE314 PRA0105 · ECE334 PRA0103 · LIN200 TUT0301）。
 
 ---
@@ -11,29 +11,31 @@ section（ECE311 PRA0106 · ECE314 PRA0105 · ECE334 PRA0103 · LIN200 TUT0301�
 
 ### 1. 拿到仓库
 
-仓库的 remote 放在 Google Drive 上，不需要 GitHub 账号：
-
 ```bash
-git clone "G:/我的云端硬盘/Study.git" D:/Study
+git clone https://github.com/maijiOvO/schedule-widget.git
 ```
 
-盘符不一样就换成实际路径。前提是那台机器装了 Google Drive 并且已经同步完
-（`我的云端硬盘/Study.git` 这个文件夹要能在资源管理器里看到）。
+### 2. 告诉它 Obsidian 库在哪
 
-没装 Git 也行 —— 直接把 Drive 里的文件夹整个拷过去，只是以后没法 `git pull`。
+`学期日程.md` 是写进 Obsidian 库的，而库（`D:/Study`）和这个仓库不在一起，
+所以得指一次。**每台机器只需要指这一次**，记在 `%APPDATA%/schedule-widget/vault.txt`：
 
-### 2. 装组件
+```bash
+python widget.py --vault D:/Study
+```
 
-双击 `_schedule/安装到这台电脑.bat`。它会检查 Python、设好开机自启、然后
-立刻把组件启起来。
+也可以用环境变量 `STUDY_VAULT`，它的优先级更高。没配过的话，组件照常跑，
+只是双击打不开 `学期日程.md`，`gen.py` 则会直接报错退出。
+
+### 3. 装组件
+
+双击 `安装到这台电脑.bat`。它会检查 Python、设好开机自启、然后立刻把组件启起来。
 
 没有 Python 的话它会告诉你去哪装（要勾 **Add python.exe to PATH**）。
+实在不想装 Python，就用 `python build_exe.py` 打出来的绿色版 exe，双击就跑，
+但它把数据编译进去了 —— 见文末。
 
-实在不想装 Python，Drive 上有打好的绿色版：
-`G:/我的云端硬盘/Study-便携版/日程组件.exe`，双击就跑。但它把数据编译进去了，
-改了日程要重新打包 —— 见文末。
-
-### 3. 日历（可选）
+### 4. 日历（可选）
 
 `任务与考试.ics` 导进手机/iPad/电脑的日历，111 条提醒。
 `课表.ics` 只导没有课表的设备 —— 手机上已经有一份了，别重复导。
@@ -68,7 +70,8 @@ git clone "G:/我的云端硬盘/Study.git" D:/Study
 放不下才一档档削，先削「接下来」（它比「该动手了」次要）。拖高了多列几条，
 内容不够就留白，拖矮了自动收。
 
-每 15 秒自己刷新。重复启动会被挡掉，不会叠出两个。
+每 15 秒自己刷新。**同时只会有一个组件**：第二个实例发现屏幕上已经有那个窗口
+就退掉（exe 版会弹个框说明白，不是毫无反应）。
 
 没手动调过的话，组件会跟着屏幕自适应：屏幕矮就少列几条，屏高不足 1200px 的
 机器默认再小一档。手动拖过或滚过之后，你定的尺寸说了算。
@@ -80,7 +83,7 @@ git clone "G:/我的云端硬盘/Study.git" D:/Study
 **所有日期只存在于 `data.py` 一个地方。** 改完重跑：
 
 ```bash
-python _schedule/gen.py
+python gen.py
 ```
 
 ics、`学期日程.md` 会一起更新；组件右键「立即刷新」即可，不用重启。
@@ -92,18 +95,9 @@ ics、`学期日程.md` 会一起更新；组件右键「立即刷新」即可�
 - **某个 lab 改期了** → 改 `ECE311_LABS` / `ECE314_LABS` / `ECE334_LABS`
 - **发现某项任务实际花的时间和估计差很远** → 改 `WORKLOAD`，三个出口一起变
 
-改完记得推回 Drive，另一台机器才拿得到。**用 sync.py，别直接 git push**：
-
-```bash
-python _schedule/sync.py -m "改了什么"
-```
-
-另一台机器上 `python _schedule/sync.py --pull`。
-
-为什么不直接 `git push`：Drive 是流式盘，一次 push 要往远程写几十个小对象
-文件、异步上传，ref 更新了但对象没写全的话仓库就坏了（2026-09-09 坏过一次，
-本地毫无感觉，是下次 push 才报出来的）。`sync.py` 推完会 gc 成单个 pack 再
-fsck 验一遍，坏了自动重建重推。`--check` 只验证不推。
+改完 `git push` 就行 —— GitHub 是正经远程仓库，不像之前挂在 Google Drive 上，
+不需要那套推完再 gc + fsck 验一遍的保险。（那个 `sync.py` 归 Obsidian 库自己用了，
+现在在 `D:/Study/_system/sync.py`。）
 
 ---
 
@@ -111,29 +105,32 @@ fsck 验一遍，坏了自动重建重推。`--check` 只验证不推。
 
 ```
 data.py       所有日期 + WORKLOAD + 「某天有什么课/什么截止」的推导。谁也不依赖
-gen.py        → 课表.ics + 任务与考试.ics + ../学期日程.md
+gen.py        → 课表.ics + 任务与考试.ics + <库>/学期日程.md
 widget.py     → 桌面组件
 wallpaper.py  → 壁纸（备选，静态的，会被窗口挡住）
+build_exe.py  → 日程组件.exe（不入库，需要时现打）
 
 安装到这台电脑.bat    检查环境 + 设开机自启 + 启动
 启动组件.vbs          日常启动用，不弹黑框
 ```
 
 只有 `wallpaper.py` 需要 Pillow，其余全是标准库（tkinter 是 Python 自带的）。
-需要 Python 3.9 以上。
+需要 Python 3.9 以上。Windows only —— 组件用了 Win32 的窗口查找和开机自启。
 
 ---
 
 ## 关于 exe
 
-`日程组件.exe` 不需要 Python，双击就跑。但它把日程数据**编译进去了** ——
-改了 `data.py` 之后 exe 里还是旧数据，得重新打包：
-
 ```bash
-python _schedule/build_exe.py
+python build_exe.py
 ```
 
+产出的 `日程组件.exe` 不需要 Python，双击就跑，也可以拷到桌面。但它把日程数据
+**编译进去了** —— 改了 `data.py` 之后 exe 里还是旧数据，得重新打包。
 所以有 Python 的机器优先用 bat 装，exe 只是没 Python 时的兜底。
+
+exe 版的窗口位置文件 `.widget_pos.json` 存在 exe 自己旁边，Obsidian 库的位置
+则和脚本版共用 `%APPDATA%/schedule-widget/vault.txt`。
 
 ---
 
@@ -147,3 +144,7 @@ python _schedule/build_exe.py
 - **10月6日一天两场考试**：ECE334 中午 12:00，ECE311 晚上 18:30。
 - ECE334 两次 term test 的日期 syllabus 自己标了 tentative，考前留意 Quercus。
 - ECE311 习题课教室 syllabus 写 BA1200，之前记的是 BA1220，去之前核一下 ACORN。
+- **组件"打不开"先看有没有僵尸进程**。以前的单实例判断用命名互斥量，互斥量活
+  在进程上而不是窗口上 —— 2026-09-09 就留下过一个没有任何窗口、光占着互斥量的
+  pythonw，之后双击 exe 毫无反应。现在改成找窗口，这种进程不再碍事；真遇到组件
+  不出来，任务管理器里把 pythonw / 日程组件 结束掉再开。

@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """把桌面组件打包成不需要 Python 的 exe。
 
-    python _schedule/build_exe.py
+    python schedule-widget/build_exe.py
 
-产物是 _schedule/日程组件.exe，单文件、无控制台。
+产物是 schedule-widget/日程组件.exe，单文件、无控制台。
 
 注意：日程数据会被编译进 exe。改了 data.py 之后必须重新跑本脚本，
 否则 exe 里还是旧数据。有 Python 的机器优先用 安装到这台电脑.bat。
@@ -31,7 +31,7 @@ def main():
         "--onefile",              # 单个 exe，方便拷来拷去
         "--windowed",             # 不要控制台窗口
         "--name", NAME,
-        "--distpath", HERE,       # 直接产在 _schedule/ 下
+        "--distpath", HERE,       # 直接产在 schedule-widget/ 下
         "--workpath", build,
         "--specpath", build,
         "--noconfirm",
