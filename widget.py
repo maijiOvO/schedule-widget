@@ -127,6 +127,14 @@ def kind_color(k):
     return {"lab": GREEN, "exam": PURPLE}.get(k, BLUE)
 
 
+def when_full(d, n, weekday=True):
+    """「9/18 周五 · 8 天后」。只说「8 天后」的话，没人知道那天到底落在哪。"""
+    day = f"{d.month}/{d.day}"
+    if weekday:
+        day += f" 周{WEEK_CN[d.weekday()]}"
+    return f"{day} · {when_cn(n)}"
+
+
 def human_gap(m):
     """把分钟数说成人话"""
     if m < 1:
@@ -650,36 +658,59 @@ class Widget:
             if len(items) >= 5:
                 break
 
-        # 已经到该动手的日子、还没过截止的，单独拎出来放最上面
-        todo = [it for it in items if it.started(today) and it.needs_work]
-        rest = [it for it in items if it not in todo]
+        # 已经到该动手的日子、还没过截止的，单独拎出来放最上面。
+        # 材料已经放出、可以动手，但还没到建议动手日的，紧跟在后面暗一档列 ——
+        # 这一档是用来提前占时间的，不是催你现在就做。
+        todo = [it for it in items if it.started(today, nm) and it.needs_work]
+        soon = [it for it in items if it.needs_work and it.available(today, nm)
+                and not it.started(today, nm)]
+        rest = [it for it in items if it not in todo and it not in soon]
 
-        if todo:
+        # 日期写法：宽的时候连星期几一起写，窄卡片挤不下就只留月/日。
+        # 量的是渲染出来的物理宽度，除以 scale 换回布局用的逻辑像素。
+        def lab_w(txt):
+            return F["small"].measure(txt) / self.scale
+        wide = self.W - 2 * PAD - 52 - lab_w(when_full(today, 28)) - 32 >= 150
+
+        if todo or soon:
+            hot = todo[:todo_max]
+            # 空间不够时先削「可以做」这一档 —— 它比真的该动手了次要
+            warm = soon[:max(0, todo_max - len(hot))]
             self.rule(y)
             y += 14
-            self.txt(PAD, y, "该动手了", F["head"], DIM)
+            self.txt(PAD, y, "该动手了" if hot else "可以做了", F["head"], DIM)
             y += 22
-            for it in todo[:todo_max]:
+            tails = {it: ("今天 %02d:%02d" % it.at) if it.days_left(today) == 0
+                         else when_full(it.date, it.days_left(today), wide)
+                     for it in hot + warm}
+            tail_w = max(88, max(lab_w(t) for t in tails.values()) + 12)
+            for it in hot + warm:
+                open_only = it in warm      # 窗口开了，但还不到建议动手的日子
                 n = it.days_left(today)
                 col = URG[urgency(n)] if it.hard or it.kind == "exam" else DIM
                 is_exam = it.kind == "exam"
-                c.create_oval(PAD, y + 7, PAD + 7, y + 14,
-                              fill=PURPLE if is_exam else col, outline="")
+                if open_only:
+                    # 空心点 = 可以做了；实心点 = 该做了
+                    c.create_oval(PAD, y + 7, PAD + 7, y + 14, outline=col)
+                else:
+                    c.create_oval(PAD, y + 7, PAD + 7, y + 14,
+                                  fill=PURPLE if is_exam else col, outline="")
                 w = self.txt(PAD + 18, y, it.label, F["body"],
-                             PURPLE if is_exam else FG,
-                             maxw=(self.W - PAD - 88 - (PAD + 18)) * self.scale)
+                             PURPLE if is_exam else (DIM if open_only else FG),
+                             maxw=(self.W - PAD - tail_w - (PAD + 18)) * self.scale)
                 # bbox 的左边是逻辑坐标，宽度却是字体渲染出来的物理像素 ——
                 # 混着用会让工时标签在缩放后跑偏（放大时空一大截，缩小时压到字上）
                 x1, _, x2, _ = self.canvas.bbox(w)
                 bx = x1 + (x2 - x1) / self.scale
-                self.txt(bx + 10, y + 2,
-                         "复习" if it.hours is None else f"{it.hours:g}h",
+                tag = "复习" if it.hours is None else f"{it.hours:g}h"
+                self.txt(bx + 10, y + 2, "可做 · " + tag if open_only else tag,
                          F["small"], FAINT)
-                tail = ("今天 %02d:%02d" % it.at) if n == 0 else when_cn(n)
-                self.txt(self.W - PAD, y + 1, tail, F["small"], col, "ne")
+                self.txt(self.W - PAD, y + 1, tails[it], F["small"],
+                         FAINT if open_only else col, "ne")
                 y += 26
-            if len(todo) > todo_max:
-                self.txt(PAD + 18, y, f"⋯ 还有 {len(todo) - todo_max} 件", F["small"], FAINT)
+            more = (len(todo) - len(hot)) + (len(soon) - len(warm))
+            if more:
+                self.txt(PAD + 18, y, f"⋯ 还有 {more} 件", F["small"], FAINT)
                 y += 24
             y += 6
 
@@ -689,28 +720,32 @@ class Widget:
             self.txt(PAD, y, "接下来", F["head"], DIM)
             y += 22
             last = None
-            for it in rest[:rest_max]:
+            shown = rest[:rest_max]
+            labs = {it.date: when_full(it.date, it.days_left(today), wide)
+                    for it in shown}
+            bx = PAD + max(72, max(lab_w(s) for s in labs.values()) + 12)
+            for it in shown:
                 n = it.days_left(today)
                 col = URG[urgency(n)] if it.hard else DIM
                 if it.date != last:
                     lab_col = URG[urgency(n)] if any(
                         x.hard for x in rest if x.date == it.date) else DIM
-                    self.txt(PAD, y + 1, when_cn(n), F["small"], lab_col)
+                    self.txt(PAD, y + 1, labs[it.date], F["small"], lab_col)
                     last = it.date
                 if it.kind == "exam":
-                    c.create_rectangle(PAD + 72, y + 6, PAD + 80, y + 15,
+                    c.create_rectangle(bx, y + 6, bx + 8, y + 15,
                                        fill=PURPLE, outline="")
                 elif it.hard:
-                    c.create_oval(PAD + 72, y + 7, PAD + 79, y + 14, fill=col, outline="")
+                    c.create_oval(bx, y + 7, bx + 7, y + 14, fill=col, outline="")
                 self.txt(self.W - PAD, y + 1, "%02d:%02d" % it.at,
                          F["small"], FAINT, "ne")
-                self.txt(PAD + 92, y, it.text,
+                self.txt(bx + 20, y, it.text,
                          F["body"] if it.hard else F["small"],
                          PURPLE if it.kind == "exam" else (FG if it.hard else DIM),
-                         maxw=(self.W - PAD - 52 - (PAD + 92)) * self.scale)
+                         maxw=(self.W - PAD - 52 - (bx + 20)) * self.scale)
                 y += 25
             if len(rest) > rest_max:
-                self.txt(PAD + 92, y, f"⋯ 还有 {len(rest) - rest_max} 项", F["small"], FAINT)
+                self.txt(bx + 20, y, f"⋯ 还有 {len(rest) - rest_max} 项", F["small"], FAINT)
                 y += 25
             y += 6
 

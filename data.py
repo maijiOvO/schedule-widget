@@ -147,7 +147,11 @@ ECE334_LABS = [
     (3, dt.date(2026, 11, 19)),
     (4, dt.date(2026, 12, 3)),
 ]
-# LIN200 quiz —— 周四放出、周五 23:59 关闭
+# LIN200 quiz —— 周四 18:00 放出，下一周的周五 23:59 关闭，窗口 8 天。
+# syllabus 只说 "made available by end-of-day Thursdays ... close on the following
+# Fridays"、"the quiz will be open for a week"，18:00 这个点是实际观察到的
+# （2026-09-10 Quiz 1 就是当天 18:00 开）。放出是哪个周四由 quiz_open() 按课表算。
+QUIZ_OPEN_AT = (18, 0)
 LIN200_QUIZ = [
     (1, dt.date(2026, 9, 18)),  (2, dt.date(2026, 9, 25)),
     (3, dt.date(2026, 10, 2)),  (4, dt.date(2026, 10, 9)),
@@ -177,6 +181,8 @@ EXAMS = [
 LOOKAHEAD = 14   # 「接下来」默认往前看多少天
 
 # 每类任务：建议提前几天动手 + 大概要几小时。
+# 提前天数只是「建议什么时候起手」，跟「什么时候才可以起手」是两回事 ——
+# 后者是 Item.opens（材料放出/前置做完），见 OPEN_LEAD 和 quiz_open()。
 # 这套数字是按「syllabus 说了什么 + 截止窗口有多长」估的，不是实测。
 # 做完第一次就回来改成自己的真实耗时 —— 这里改一次，ics 提醒、学期日程.md、
 # 桌面组件三处一起变。
@@ -184,11 +190,21 @@ WORKLOAD = {
     # 类型      提前天数  小时   说明
     "prep":    (4, 2.5),   # lab prep：要预算/预仿真，跨一个周末才够
     "report":  (4, 3.5),   # 实验报告：小组的，得先约上时间
-    "quiz":    (1, 1.0),   # LIN200 quiz 周四放出周五关，窗口本来就只有一天多
+    "quiz":    (8, 1.0),   # 开窗即动手：放出那天就该做，别攒到最后（见 START_AT_OPEN）
     "read":    (0, 1.0),   # 过 lab handout：当晚一次过完
     "exam":    (14, None),  # 期中：提前两周进复习
     "lab":     (0, None),   # lab 本身是去上，不用提前做
 }
+
+
+# 「可做窗口」的起点：材料放出、或者前置做完的那一刻。到这天才谈得上开始做。
+# lab 类的 handout 三门 syllabus 都没写什么时候上 Quercus（ECE334 只说
+# "Lab handouts are/will be available on the course website"），所以按提前一周估；
+# 看到真实发布日就改这里。报告的起点是确定的 —— lab 做完才写得了。
+OPEN_LEAD = {"prep": 7, "read": 7}   # 相对 lab 当天往前几天，报告/quiz 另行计算
+
+# 这些类型「开窗即动手」：窗口一开就该做，不再另算提前天数
+START_AT_OPEN = {"quiz"}
 
 
 @dataclass(frozen=True)
@@ -199,6 +215,8 @@ class Item:
     text: str
     kind: str           # prep / report / quiz / read / exam / lab
     at: tuple           # (时, 分)
+    opens: dt.date = None   # 可做窗口的起点；None = 没这个概念（课、考试）
+    opens_at: tuple = (0, 0)   # 那天几点才算开窗（quiz 是 18:00 才放出来）
 
     @property
     def label(self):
@@ -215,16 +233,38 @@ class Item:
 
     @property
     def start(self):
-        """建议哪天动手"""
-        return self.date - dt.timedelta(days=self.lead)
+        """建议哪天动手。不会早于可做窗口 —— 材料还没放出，催也没用。"""
+        if self.opens and self.kind in START_AT_OPEN:
+            return self.opens
+        d = self.date - dt.timedelta(days=self.lead)
+        return max(d, self.opens) if self.opens else d
 
     @property
     def needs_work(self):
         """是要自己花时间做的事（考试复习也算），还是只是去上一节课"""
         return self.hours is not None or self.kind == "exam"
 
-    def started(self, today):
-        return self.start <= today <= self.date
+    def _open_yet(self, today, now_min):
+        """开窗当天还得过了放出时刻才算数 —— 周四早上 quiz 还没出来呢。
+        now_min 不给就按一整天算完，日历/月历那种只论天的地方用得上。"""
+        return not (self.opens and today == self.opens
+                    and now_min < self.opens_at[0] * 60 + self.opens_at[1])
+
+    def started(self, today, now_min=1440):
+        return (self.start <= today <= self.date
+                and (self.start != self.opens or self._open_yet(today, now_min)))
+
+    def available(self, today, now_min=1440):
+        """材料已经放出、还没过截止 —— 这段时间里随时可以做。
+        没标 opens 的项退回「到了建议动手日才算」，跟以前一个样。"""
+        return ((self.opens or self.start) <= today <= self.date
+                and self._open_yet(today, now_min))
+
+    def window(self, today):
+        """(窗口共几天, 还剩几天)。没有窗口概念的返回 None。"""
+        if not self.opens:
+            return None
+        return (self.date - self.opens).days, (self.date - today).days
 
     def days_left(self, today):
         return (self.date - today).days
@@ -259,6 +299,26 @@ def classes_on(d):
     return sorted(out)
 
 
+def has_class(d, course, kind):
+    """那天有没有某门课的某种课时。用来判断 quiz 覆盖的那次 tutorial 到底开没开。"""
+    return any(t[2].startswith(course) and t[4] == kind for t in classes_on(d))
+
+
+def quiz_open(close_d):
+    """LIN200 quiz 的放出日：关闭日（周五）往前 8 天的那个周四。
+
+    那天要是没 tutorial 就再退一周 —— 全学期只有 Quiz 5 会走到这一步：往前 8 天
+    落在 Reading Week 的 10/29，于是退到 10/22 Tutorial 6 之后放出，跨整个
+    Reading Week 一直开到 11/6。这跟 syllabus 周历里 Quiz 5 排在 Week 8 行、
+    考的却是 Week 7 内容是对得上的。"""
+    d = close_d - dt.timedelta(days=8)
+    for _ in range(3):
+        if has_class(d, "LIN200", "tut"):
+            return d
+        d -= dt.timedelta(days=7)
+    return close_d - dt.timedelta(days=8)
+
+
 def upcoming(today, days=LOOKAHEAD):
     """今天起 days 天内的所有截止/实验/考试，按时间排好，返回 [Item]。
 
@@ -266,19 +326,25 @@ def upcoming(today, days=LOOKAHEAD):
     同一天里硬截止排在前面。"""
     out = []
     for n, lab_d, prep_d, rep_d in ECE314_LABS:
-        out.append(Item(prep_d, True, f"ECE314 Lab {n} prep 截止", "prep", (12, 0)))
+        out.append(Item(prep_d, True, f"ECE314 Lab {n} prep 截止", "prep", (12, 0),
+                        lab_d - dt.timedelta(days=OPEN_LEAD["prep"])))
         out.append(Item(lab_d, False, f"ECE314 Lab {n}  GB40", "lab", (10, 0)))
-        out.append(Item(rep_d, True, f"ECE314 Lab {n} 报告截止", "report", (23, 59)))
+        out.append(Item(rep_d, True, f"ECE314 Lab {n} 报告截止", "report", (23, 59),
+                        lab_d))          # 做完 lab 才写得了报告
     for n, lab_d, rep_d in ECE311_LABS:
-        out.append(Item(lab_d, True, f"ECE311 Lab {n} prep 截止", "prep", (15, 0)))
+        out.append(Item(lab_d, True, f"ECE311 Lab {n} prep 截止", "prep", (15, 0),
+                        lab_d - dt.timedelta(days=OPEN_LEAD["prep"])))
         out.append(Item(lab_d, False, f"ECE311 Lab {n}  BA3114", "lab", (15, 0)))
-        out.append(Item(rep_d, True, f"ECE311 Lab {n} 报告截止", "report", (23, 59)))
+        out.append(Item(rep_d, True, f"ECE311 Lab {n} 报告截止", "report", (23, 59),
+                        lab_d))
     for n, lab_d in ECE334_LABS:
         out.append(Item(lab_d - dt.timedelta(days=3), False,
-                        f"过 ECE334 Lab {n} handout", "read", (19, 0)))
+                        f"过 ECE334 Lab {n} handout", "read", (19, 0),
+                        lab_d - dt.timedelta(days=OPEN_LEAD["read"])))
         out.append(Item(lab_d, False, f"ECE334 Lab {n}  SF2206", "lab", (9, 0)))
     for n, close_d in LIN200_QUIZ:
-        out.append(Item(close_d, True, f"LIN200 Quiz {n} 截止", "quiz", (23, 59)))
+        out.append(Item(close_d, True, f"LIN200 Quiz {n} 截止", "quiz", (23, 59),
+                        quiz_open(close_d), QUIZ_OPEN_AT))
     for c, name, ed, (h1, m1), _e, _note in EXAMS:
         out.append(Item(ed, True, f"{c} {name}", "exam", (h1, m1)))
     lo, hi = today, today + dt.timedelta(days=days)
@@ -286,9 +352,16 @@ def upcoming(today, days=LOOKAHEAD):
                   key=lambda x: (x.date, not x.hard, x.text))
 
 
-def todo_now(today, days=LOOKAHEAD):
+def todo_now(today, days=LOOKAHEAD, now_min=1440):
     """已经到了该动手的时候、但还没过截止的事。这就是「我现在该做什么」。"""
-    return [it for it in upcoming(today, days) if it.started(today) and it.needs_work]
+    return [it for it in upcoming(today, days)
+            if it.started(today, now_min) and it.needs_work]
+
+
+def can_start_now(today, days=LOOKAHEAD, now_min=1440):
+    """材料已经放出、可以动手，但还没到建议动手日的事。用来提前占好时间。"""
+    return [it for it in upcoming(today, days) if it.needs_work
+            and it.available(today, now_min) and not it.started(today, now_min)]
 
 
 def next_exam(today):

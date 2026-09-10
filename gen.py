@@ -287,19 +287,25 @@ for n, lab_d in ECE334_LABS:
 
 # ---------- LIN200 quiz ----------
 for n, close_d in LIN200_QUIZ:
-    open_d = close_d - dt.timedelta(days=1)
+    open_d = quiz_open(close_d)
+    span = (close_d - open_d).days
     dl = at(close_d, 23, 0)   # = 本事件 DTSTART
     body += event(
         f"截止 LIN200 Quiz {n}（23:59）",
         local(close_d, 23, 0), local(close_d, 23, 59), "Quercus",
         f"LIN200 Quiz {n}，占 3%（9 个 quiz 共 27%）。\n\n"
-        f"周四 {open_d.strftime('%m月%d日')} 放出，周五 {close_d.strftime('%m月%d日')} 23:59 关闭。\n"
+        f"周四 {open_d.strftime('%m月%d日')} {QUIZ_OPEN_AT[0]}:{QUIZ_OPEN_AT[1]:02d} 放出，"
+        f"周五 {close_d.strftime('%m月%d日')} 23:59 关闭，可做窗口 {span} 天。\n"
         f"开始后有 48 小时窗口，但不能超过关闭时间 —— 别拖到周五晚上才点开。\n\n"
         f"可以用讲义和课本，不能用其他网络资源或 AI，必须独立完成。\n"
         f"除特殊情况外没有补考机会（答案在截止后很快公布）。",
         alarms=[
-            alarm(before_at(dl, WORKLOAD["quiz"][0], 18),
-                  f"LIN200 Quiz {n} 已放出，今晚做掉 —— 约 {WORKLOAD['quiz'][1]:g} 小时，明晚 23:59 关闭"),
+            alarm(before_at(dl, span, QUIZ_OPEN_AT[0] + 1),
+                  f"LIN200 Quiz {n} 已放出，从今晚起随时可做 —— 约 "
+                  f"{WORKLOAD['quiz'][1]:g} 小时，{close_d.strftime('%m月%d日')} 23:59 关闭。"
+                  f"点开之后 48 小时内必须交"),
+            alarm(before_at(dl, 3, 18),
+                  f"LIN200 Quiz {n} 还有 3 天关闭 —— 还没做就今晚做掉"),
             alarm(before_at(dl, 0, 18), f"LIN200 Quiz {n} 今晚 23:59 关闭 —— 还没做就现在做"),
         ],
         cats="截止",
@@ -416,6 +422,15 @@ add(dt.date(2026, 10, 12), -2, "🍁 感恩节，全天停课")
 add(dt.date(2026, 11, 17), -2, "⚠️ **最后退课日**")
 add(dt.date(2026, 12, 8), -2, "🎓 最后上课日")
 
+# 可做窗口一开就插一条 —— 材料到手了，翻到那一周就能提前把时间占上。
+# 建议动手日跟开窗同一天的（quiz 就是这样）不重复插，下面那条已经说了。
+for _it in upcoming(TERM_START, 400):
+    if not _it.needs_work or not _it.opens or _it.opens >= _it.start:
+        continue
+    add(_it.opens, 0.4,
+        f"🟢 **{_it.label}** 可以开始了"
+        f"（窗口到 {_it.date.month}月{_it.date.day}日）")
+
 # 建议动手日单独插一条 —— 翻到那一周就知道该起手了，不用自己倒推
 for _it in upcoming(TERM_START, 400):
     if not _it.needs_work or _it.start == _it.date:
@@ -424,9 +439,12 @@ for _it in upcoming(TERM_START, 400):
     if _it.kind == "exam":
         add(_it.start, 0.5, f"▶ **开始复习 {_it.text}**（{_due} 考）")
     else:
+        # 开窗即动手的（quiz），把放出时刻也写上 —— 那天早上还没得做
+        _open = (f"{_it.opens_at[0]}:{_it.opens_at[1]:02d} 放出，"
+                 if _it.opens == _it.start and _it.opens_at != (0, 0) else "")
         add(_it.start, 0.5,
             f"▶ **开始做 {_it.label}**"
-            f"（约 {_it.hours:g} 小时，{_due} 截止）")
+            f"（{_open}约 {_it.hours:g} 小时，{_due} 截止）")
 
 MD.append("""# 2026 Fall 学期日程
 
@@ -454,7 +472,7 @@ MD.append("""# 2026 Fall 学期日程
 |---|---|---|---|
 | Lab prep | 4 天 | 2.5 小时 | 要预算、预仿真，得跨一个周末才够 |
 | 实验报告 | 4 天 | 3.5 小时 | 小组交的，得先约上时间 |
-| LIN200 Quiz | 1 天 | 1 小时 | 周四放出周五关，窗口本来就只有一天多 |
+| LIN200 Quiz | 开窗即动手 | 1 小时 | 周四 18:00 放出、下周五 23:59 关，窗口 8 天；点开后 48 小时内必须交 |
 | 过 lab handout | 当天 | 1 小时 | 一晚上过完 |
 | 期中复习 | 14 天 | — | 提前两周进状态 |
 
