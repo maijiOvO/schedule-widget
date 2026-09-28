@@ -159,21 +159,26 @@ LIN200_QUIZ = [
     (7, dt.date(2026, 11, 20)), (8, dt.date(2026, 11, 27)),
     (9, dt.date(2026, 12, 4)),
 ]
-# 考试 (课号, 名称, 日期, 起, 止, 备注)
+# 考试 (课号, 名称, 日期, 起, 止, 教室, 备注) —— 教室还没公布就填 None
 EXAMS = [
-    ("ECE334", "Term Test 1", dt.date(2026, 10, 6), (12, 0), (13, 0),
+    ("ECE334", "Term Test 1", dt.date(2026, 10, 6), (12, 0), (13, 0), None,
      "闭卷。允许一张手写单面 8.5x11 aid sheet。必须用钢笔/圆珠笔作答，否则不能申请复核。占 15%。日期 tentative，考前确认。"),
-    ("ECE311", "Midterm 1", dt.date(2026, 10, 6), (18, 30), (20, 0),
+    ("ECE311", "Midterm 1", dt.date(2026, 10, 6), (18, 30), (20, 0), None,
      "1.5 小时。占 15%。⚠️ 同一天 12:00 还有 ECE334 Term Test 1。"),
-    ("LIN200", "Midterm", dt.date(2026, 10, 13), (17, 0), (19, 0),
+    # ECE302 没有 syllabus，两次期中来自 Quercus 公告「Midterm Exam Schedule」(2026-09-16)
+    ("ECE302", "Midterm 1", dt.date(2026, 10, 8), (18, 0), (19, 0), "EX200",
+     "1 小时。LEC0101 和 LEC0102 都在 EX200 考。占分多少未知（没有 syllabus）。⚠️ 两天前（10月6日）刚考完 ECE334 + ECE311 两场。"),
+    ("LIN200", "Midterm", dt.date(2026, 10, 13), (17, 0), (19, 0), None,
      "在 lecture 时段线下进行，110 分钟，覆盖 Week 1-5。占 28%。补考仅限特殊情况：Oct 16 (Fri) 17:10-19:00，须在期中后 24 小时内联系老师。"),
-    ("ECE314", "Midterm 1", dt.date(2026, 10, 23), (13, 0), (14, 0),
+    ("ECE314", "Midterm 1", dt.date(2026, 10, 23), (13, 0), (14, 0), None,
      "1 小时，占 15%。教室另行通知（不一定是 GB120）。"),
-    ("ECE334", "Term Test 2", dt.date(2026, 11, 10), (12, 0), (13, 0),
+    ("ECE302", "Midterm 2", dt.date(2026, 11, 5), (18, 0), (19, 0), "MS3154",
+     "1 小时。按 lecture section 分教室：你是 LEC0102 → MS3154（LEC0101 在 MS3153，别走错）。占分多少未知。"),
+    ("ECE334", "Term Test 2", dt.date(2026, 11, 10), (12, 0), (13, 0), None,
      "闭卷。一张手写单面 aid sheet。占 15%。日期 tentative。"),
-    ("ECE311", "Midterm 2", dt.date(2026, 11, 17), (18, 30), (20, 0),
+    ("ECE311", "Midterm 2", dt.date(2026, 11, 17), (18, 30), (20, 0), None,
      "1.5 小时。占 15%。⚠️ 同一天是最后退课日。"),
-    ("ECE314", "Midterm 2", dt.date(2026, 11, 20), (13, 0), (14, 0),
+    ("ECE314", "Midterm 2", dt.date(2026, 11, 20), (13, 0), (14, 0), None,
      "1 小时，占 15%。教室另行通知。⚠️ 同一天 15:00 ECE311 Lab 3。"),
 ]
 
@@ -293,9 +298,9 @@ def classes_on(d):
         if d == lab_d:
             tail = " (P/F)" if n == 0 else ""
             out.append(((9, 0), (12, 0), f"ECE334 Lab {n}{tail}", "SF2206", "lab"))
-    for c, name, ed, (h1, m1), (h2, m2), _note in EXAMS:
+    for c, name, ed, (h1, m1), (h2, m2), room, _note in EXAMS:
         if d == ed:
-            out.append(((h1, m1), (h2, m2), f"{c} {name}", "考试", "exam"))
+            out.append(((h1, m1), (h2, m2), f"{c} {name}", room or "考试", "exam"))
     return sorted(out)
 
 
@@ -345,7 +350,7 @@ def upcoming(today, days=LOOKAHEAD):
     for n, close_d in LIN200_QUIZ:
         out.append(Item(close_d, True, f"LIN200 Quiz {n} 截止", "quiz", (23, 59),
                         quiz_open(close_d), QUIZ_OPEN_AT))
-    for c, name, ed, (h1, m1), _e, _note in EXAMS:
+    for c, name, ed, (h1, m1), _e, _room, _note in EXAMS:
         out.append(Item(ed, True, f"{c} {name}", "exam", (h1, m1)))
     lo, hi = today, today + dt.timedelta(days=days)
     return sorted((x for x in out if lo <= x.date <= hi),
@@ -365,7 +370,7 @@ def can_start_now(today, days=LOOKAHEAD, now_min=1440):
 
 
 def next_exam(today):
-    fut = sorted(((d, h, c, n) for c, n, d, h, _e, _x in EXAMS if d >= today))
+    fut = sorted(((d, h, c, n) for c, n, d, h, _e, _r, _x in EXAMS if d >= today))
     if not fut:
         return None
     d_, h_, c_, n_ = fut[0]

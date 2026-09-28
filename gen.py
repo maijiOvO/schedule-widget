@@ -312,11 +312,11 @@ for n, close_d in LIN200_QUIZ:
     )
 
 # ---------- 考试 ----------
-for c, name, d, (h1, m1), (h2, m2), note in EXAMS:
+for c, name, d, (h1, m1), (h2, m2), room, note in EXAMS:
     dl = at(d, h1, m1)        # = 本事件 DTSTART
     body += event(
         f"📝 {c} {name}",
-        local(d, h1, m1), local(d, h2, m2), "教室待通知",
+        local(d, h1, m1), local(d, h2, m2), room or "教室待通知",
         f"{c}（{CN[c]}） {name}\n{d.strftime('%Y-%m-%d')} {h1:02d}:{m1:02d}-{h2:02d}:{m2:02d}\n\n{note}",
         alarms=[
             alarm(before_at(dl, WORKLOAD["exam"][0], 9),
@@ -349,7 +349,8 @@ body += allday(dt.date(2026, 11, 17), dt.date(2026, 11, 17),
                "⚠️ 最后退课日 (Last day to drop)",
                "今天是本学期最后一天可以 drop 课而不留记录。\n\n"
                "到这一天为止你已经知道的成绩：ECE334 两次 term test（30%）、"
-               "ECE311 Midterm 1（15%）、LIN200 期中（28%）+ 6 次 quiz、ECE314 Midterm 1（15%）。"
+               "ECE311 Midterm 1（15%）、LIN200 期中（28%）+ 6 次 quiz、ECE314 Midterm 1（15%）、"
+               "ECE302 两次期中（占比未知）。"
                "足够判断了。\n\n⚠️ 同一天晚上 18:30 还有 ECE311 Midterm 2。",
                alarms=[alarm("-P13DT15H", "两周后（11月17日）是最后退课日 —— 开始算各科成绩"),
                        alarm("-P2DT15H", "11月17日是最后退课日")])
@@ -415,9 +416,10 @@ for n, lab_d in ECE334_LABS:
         + ("（PASS/FAIL，必须过）" if n == 0 else ""))
 for n, close_d in LIN200_QUIZ:
     add(close_d, 0, f"**截止 23:59** LIN200 Quiz {n}（3%）")
-for c, name, d, (h1, m1), (h2, m2), _note in EXAMS:
+for c, name, d, (h1, m1), (h2, m2), room, _note in EXAMS:
     add(d, -1 + (h1 * 60 + m1) / 10000,
-        f"> 📝 **{c} {name}** · {h1:02d}:{m1:02d}-{h2:02d}:{m2:02d}")
+        f"> 📝 **{c} {name}** · {h1:02d}:{m1:02d}-{h2:02d}:{m2:02d}"
+        + (f" {room}" if room else ""))
 add(dt.date(2026, 10, 12), -2, "🍁 感恩节，全天停课")
 add(dt.date(2026, 11, 17), -2, "⚠️ **最后退课日**")
 add(dt.date(2026, 12, 8), -2, "🎓 最后上课日")
@@ -455,9 +457,9 @@ MD.append("""# 2026 Fall 学期日程
 
 | | |
 |---|---|
-| ❓ **ECE302 没有 syllabus** | Quercus 上也没有。下周一(9月14日)上课时问老师要：两次期中日期、评分权重、作业安排、有无 lab。拿到后放进 `G:/我的云端硬盘/GoodNotes/2026fall/ECE302/` 再重跑脚本。 |
+| ❓ **ECE302 没有 syllabus** | 两次期中已按 Quercus 公告补上（10月8日 EX200、11月5日 MS3154）。还缺：评分权重、作业安排、有无 lab。拿到后放进 `G:/我的云端硬盘/GoodNotes/2026fall/ECE302/` 再重跑脚本。 |
 | ⚠️ **ECE314 的 lab prep 提前两天死线** | syllabus 规定 prep 必须在该 lab 的**第一个** section（PRA0103，周一 12:00）开始前交。你的 lab 在周三，但 prep 周一中午就截止。讲义 lecture 1 上写的是「lab 开始时交」，两者矛盾 —— 按早的算，第一次 lab 时找 TA 确认。 |
-| ⚠️ **10月6日一天两场考试** | 12:00 ECE334 Term Test 1，18:30 ECE311 Midterm 1。中间隔 5 小时。 |
+| ⚠️ **10月6日一天两场考试** | 12:00 ECE334 Term Test 1，18:30 ECE311 Midterm 1。中间隔 5 小时。两天后（10月8日 18:00）还有 ECE302 Midterm 1。 |
 | ⚠️ **ECE314 Lab 3 报告撞 Reading Week** | 按「lab 后一周」算是 10月28日，正在休息周里。10月21日上完 Lab 3 当场问 TA。 |
 | ❓ **ECE334 有没有单独计分的 prelab** | syllabus 没写。第一次 lab（9月24日）时问 TA。如果有，把日程里的「过一遍 handout」改成硬截止。 |
 | ❓ **五门课的 Final 日期全部 TBD** | 都在 12月10-22 考试期内，学校统一公布。出来后补进脚本。 |
@@ -519,7 +521,7 @@ MD.append("""## 各科评分构成
 | **ECE314** 电能 | Lab 15% | MT1 15% + MT2 15% | 55% | Final **必须 ≥40%**。迟交每天扣 10%。 |
 | **ECE334** 数电 | Lab 20%（5 个，Lab 0 是 PASS/FAIL，过了之后只算后 4 个） | TT1 15% + TT2 15% | 50% | 两次 term test 必须用钢笔作答才能申请复核。迟交每天扣 10%。 |
 | **LIN200** 语言学 | Quiz 9×3% = 27% + 习题课出勤 10%（强制） | 28% | 35% | 习题课必须去，且光到场不给满分，要参与讨论。另有实验参与加分 1%。 |
-| **ECE302** 概率 | — | — | — | ❓ 等 syllabus |
+| **ECE302** 概率 | — | MT1 + MT2（占比未知） | — | ❓ 等 syllabus |
 
 ## 不计分但要做的
 

@@ -90,7 +90,7 @@ ics、`学期日程.md` 会一起更新；组件右键「立即刷新」即可�
 
 常见的改动：
 
-- **ECE302 的 syllabus 拿到了** → 在 `WEEKLY` / `EXAMS` 里补上，它现在只有课表没有任务
+- **ECE302 的 syllabus 拿到了** → 在 `WEEKLY` / `EXAMS` 里补上，它现在只有课表和两次期中（来自 Quercus 公告）
 - **期末考试日期公布了** → 加进 `EXAMS`
 - **某个 lab 改期了** → 改 `ECE311_LABS` / `ECE314_LABS` / `ECE334_LABS`
 - **发现某项任务实际花的时间和估计差很远** → 改 `WORKLOAD`，三个出口一起变
