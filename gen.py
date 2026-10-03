@@ -459,7 +459,7 @@ MD.append("""# 2026 Fall 学期日程
 |---|---|
 | ❓ **ECE302 没有 syllabus** | 两次期中已按 Quercus 公告补上（10月8日 EX200、11月5日 MS3154）。还缺：评分权重、作业安排、有无 lab。拿到后放进 `G:/我的云端硬盘/GoodNotes/2026fall/ECE302/` 再重跑脚本。 |
 | ⚠️ **ECE314 的 lab prep 提前两天死线** | syllabus 规定 prep 必须在该 lab 的**第一个** section（PRA0103，周一 12:00）开始前交。你的 lab 在周三，但 prep 周一中午就截止。讲义 lecture 1 上写的是「lab 开始时交」，两者矛盾 —— 按早的算，第一次 lab 时找 TA 确认。 |
-| ⚠️ **10月6日一天两场考试** | 12:00 ECE334 Term Test 1，18:30 ECE311 Midterm 1。中间隔 5 小时。两天后（10月8日 18:00）还有 ECE302 Midterm 1。 |
+| ⚠️ **10月6日—8日连考三天** | 10月6日 12:00 ECE334 Term Test 1；10月7日 18:30 ECE311 Midterm 1（EX100，原定 10月6日，Quercus 9月29日公告改期）；10月8日 18:00 ECE302 Midterm 1（EX200）。10月7日白天还有 ECE314 Lab 2（10:00-13:00）。 |
 | ⚠️ **ECE314 Lab 3 报告撞 Reading Week** | 按「lab 后一周」算是 10月28日，正在休息周里。10月21日上完 Lab 3 当场问 TA。 |
 | ❓ **ECE334 有没有单独计分的 prelab** | syllabus 没写。第一次 lab（9月24日）时问 TA。如果有，把日程里的「过一遍 handout」改成硬截止。 |
 | ❓ **五门课的 Final 日期全部 TBD** | 都在 12月10-22 考试期内，学校统一公布。出来后补进脚本。 |

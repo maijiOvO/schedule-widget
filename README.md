@@ -141,7 +141,8 @@ exe 版的窗口位置文件 `.widget_pos.json` 存在 exe 自己旁边，Obsidi
   讲义 lecture 1 上写的却是「lab 开始时交」，两者矛盾 —— 按早的算。
 - **ECE314 Lab 3 的报告按「lab 后一周」正好落进 Reading Week**（10月28日）。
   10月21日做完 lab 当场问 TA 是否顺延。
-- **10月6日一天两场考试**：ECE334 中午 12:00，ECE311 晚上 18:30。
+- **10月6日—8日连考三天**：6日中午 ECE334，7日晚上 ECE311（原定 6日，Quercus 公告改期），
+  8日晚上 ECE302。
 - ECE334 两次 term test 的日期 syllabus 自己标了 tentative，考前留意 Quercus。
 - ECE311 习题课教室 syllabus 写 BA1200，之前记的是 BA1220，去之前核一下 ACORN。
 - **组件"打不开"先看有没有僵尸进程**。以前的单实例判断用命名互斥量，互斥量活

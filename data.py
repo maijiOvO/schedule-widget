@@ -163,11 +163,14 @@ LIN200_QUIZ = [
 EXAMS = [
     ("ECE334", "Term Test 1", dt.date(2026, 10, 6), (12, 0), (13, 0), None,
      "闭卷。允许一张手写单面 8.5x11 aid sheet。必须用钢笔/圆珠笔作答，否则不能申请复核。占 15%。日期 tentative，考前确认。"),
-    ("ECE311", "Midterm 1", dt.date(2026, 10, 6), (18, 30), (20, 0), None,
-     "1.5 小时。占 15%。⚠️ 同一天 12:00 还有 ECE334 Term Test 1。"),
+    # syllabus 原定 10月6日（周二），Quercus 公告「Midterm 1 Coverage」(2026-09-29) 改到 10月7日
+    ("ECE311", "Midterm 1", dt.date(2026, 10, 7), (18, 30), (20, 0), "EX100",
+     "1.5 小时。占 15%。考到 Lecture 9（含）+ Homework 1、2；二阶系统的控制指标不考。"
+     "原定 10月6日，已改期。⚠️ 同一天 10:00-13:00 ECE314 Lab 2；前一天中午 ECE334 Term Test 1，"
+     "第二天晚上 ECE302 Midterm 1，连考三天。"),
     # ECE302 没有 syllabus，两次期中来自 Quercus 公告「Midterm Exam Schedule」(2026-09-16)
     ("ECE302", "Midterm 1", dt.date(2026, 10, 8), (18, 0), (19, 0), "EX200",
-     "1 小时。LEC0101 和 LEC0102 都在 EX200 考。占分多少未知（没有 syllabus）。⚠️ 两天前（10月6日）刚考完 ECE334 + ECE311 两场。"),
+     "1 小时。LEC0101 和 LEC0102 都在 EX200 考。占分多少未知（没有 syllabus）。⚠️ 前一晚（10月7日 18:30）刚考完 ECE311 Midterm 1，10月6日中午还有 ECE334 Term Test 1，连考三天。"),
     ("LIN200", "Midterm", dt.date(2026, 10, 13), (17, 0), (19, 0), None,
      "在 lecture 时段线下进行，110 分钟，覆盖 Week 1-5。占 28%。补考仅限特殊情况：Oct 16 (Fri) 17:10-19:00，须在期中后 24 小时内联系老师。"),
     ("ECE314", "Midterm 1", dt.date(2026, 10, 23), (13, 0), (14, 0), None,
